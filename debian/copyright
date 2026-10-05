@@ -1,0 +1,16 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: sg-mail
+Source: https://github.com/Stained-Glass-OS/sg-mail
+
+Files: *
+Copyright: 2026 Stained Glass OS contributors
+License: AGPL-3.0-or-later
+ This program is free software: you can redistribute it and/or modify it
+ under the terms of the GNU Affero General Public License as published by the
+ Free Software Foundation, either version 3 of the License, or (at your
+ option) any later version.
+ .
+ On Debian systems, the full text of the GNU Affero General Public License
+ version 3 can be found in the LICENSE file shipped with the source.
+Comment: SG Mail runs on Mozilla Thunderbird (Debian package thunderbird,
+ MPL-2.0), which it depends on and does not include or modify.

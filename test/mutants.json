@@ -1,0 +1,170 @@
+[
+ {
+  "name": "mail-read-script",
+  "gate": "mail-read-gate.py",
+  "file": "ui/js/sanitize.js",
+  "find": "const DROP = \"script, noscript, ",
+  "replace": "const DROP = \"noscript, ",
+  "why": "scripts left in shown mail"
+ },
+ {
+  "name": "mail-read-remote",
+  "gate": "mail-read-gate.py",
+  "file": "ui/js/reader.js",
+  "find": "    let allowRemote = false;",
+  "replace": "    let allowRemote = true;",
+  "why": "remote pictures loading at once"
+ },
+ {
+  "name": "mail-read-groups",
+  "gate": "mail-read-gate.py",
+  "file": "ui/js/util.js",
+  "find": "return { key: \"today\", label: \"Today\", order: 1 };",
+  "replace": "return { key: \"older\", label: \"Older\", order: 8 };",
+  "why": "no Today group"
+ },
+ {
+  "name": "mail-read-counts",
+  "gate": "mail-read-gate.py",
+  "file": "ui/js/folders.js",
+  "find": "c.textContent = unread ? String(unread) : \"\";",
+  "replace": "c.textContent = \"\";",
+  "why": "no unread counts"
+ },
+ {
+  "name": "mail-read-search",
+  "gate": "mail-read-gate.py",
+  "file": "ui/js/mail.js",
+  "find": "            await messenger.sgmail.updateFolder(f.id);\n            this.synced.add(f.id);",
+  "replace": "            this.synced.add(f.id);",
+  "why": "search not looking at folders not opened"
+ },
+ {
+  "name": "compose-quote",
+  "gate": "compose-gate.py",
+  "file": "ui/js/compose.js",
+  "find": "${signatureHtml()}${head}<blockquote",
+  "replace": "${signatureHtml()}<blockquote",
+  "why": "replies without the original's header"
+ },
+ {
+  "name": "compose-threading",
+  "gate": "compose-gate.py",
+  "file": "ui/js/compose.js",
+  "find": "    state.references = [header(\"references\"), msgid].filter(Boolean).join(\" \").trim();",
+  "replace": "    state.references = \"\";",
+  "why": "replies not threaded"
+ },
+ {
+  "name": "compose-answered",
+  "gate": "compose-gate.py",
+  "file": "experiments/parent.js",
+  "find": "if (details.compType !== \"new\" && details.compType !== \"draft\") original.folder.addMessageDispositionState(original, state);",
+  "replace": "",
+  "why": "the original not marked answered"
+ },
+ {
+  "name": "compose-forward-attachments",
+  "gate": "compose-gate.py",
+  "file": "ui/js/compose.js",
+  "find": "  } else {\n    await addOriginalAttachments(state.originalId);\n  }",
+  "replace": "  } else {\n  }",
+  "why": "forwards without their attachments"
+ },
+ {
+  "name": "compose-mailto",
+  "gate": "compose-gate.py",
+  "file": "background.js",
+  "find": "  await browser.windows.remove(win.id).catch(() => {});",
+  "replace": "",
+  "why": "Thunderbird's own message window left open for mailto: links"
+ },
+ {
+  "name": "compose-draft",
+  "gate": "compose-gate.py",
+  "file": "experiments/parent.js",
+  "find": "            draft: Ci.nsIMsgSend.nsMsgSaveAsDraft,",
+  "replace": "            draft: Ci.nsIMsgSend.nsMsgDeliverNow,",
+  "why": "Save sending the message"
+ },
+ {
+  "name": "actions-quit",
+  "gate": "actions-gate.py",
+  "file": "experiments/parent.js",
+  "find": "              key.setAttribute(\"disabled\", \"true\");",
+  "replace": "",
+  "why": "Ctrl+Q quitting"
+ },
+ {
+  "name": "actions-delete",
+  "gate": "actions-gate.py",
+  "file": "ui/js/mail.js",
+  "find": "      await messenger.messages.delete(ids, permanent || inTrash ? { deletePermanently: true } : {});",
+  "replace": "",
+  "why": "Delete only hiding the message"
+ },
+ {
+  "name": "actions-flag",
+  "gate": "actions-gate.py",
+  "file": "ui/js/main.js",
+  "find": "    if (key === \"Insert\") return run(() => m.flag(sel));",
+  "replace": "",
+  "why": "Insert not flagging"
+ },
+ {
+  "name": "actions-move",
+  "gate": "actions-gate.py",
+  "file": "ui/js/mail.js",
+  "find": "        await messenger.messages.move(ids, folderId);",
+  "replace": "        await messenger.messages.copy(ids, folderId);",
+  "why": "Move copying"
+ },
+ {
+  "name": "actions-notify",
+  "gate": "actions-gate.py",
+  "file": "ui/js/mail.js",
+  "find": "      this.app.notifications.push({ kind: \"mail\", title: displayName(m.author), message: m.subject, count: msgs.length });",
+  "replace": "",
+  "why": "no new-mail notification"
+ },
+ {
+  "name": "calendar-workweek",
+  "gate": "calendar-gate.py",
+  "file": "ui/js/calendar.js",
+  "find": "      return [...Array(5)].map((_, i) => addDays(monday, i));",
+  "replace": "      return [...Array(7)].map((_, i) => addDays(monday, i));",
+  "why": "Work Week of seven days"
+ },
+ {
+  "name": "calendar-recurrence",
+  "gate": "calendar-gate.py",
+  "file": "experiments/parent.js",
+  "find": "    info.appendRecurrenceItem(rule);\n    item.recurrenceInfo = info;",
+  "replace": "",
+  "why": "recurrence dropped"
+ },
+ {
+  "name": "calendar-invite",
+  "gate": "calendar-gate.py",
+  "file": "experiments/parent.js",
+  "find": "          if (options.sendInvitations && item.getAttendees().length) item.setProperty(\"X-MOZ-SEND-INVITATIONS\", \"TRUE\");",
+  "replace": "",
+  "why": "meeting requests not sent"
+ },
+ {
+  "name": "calendar-reminder",
+  "gate": "calendar-gate.py",
+  "file": "ui/js/calendar.js",
+  "find": "      if (at <= now && at > this.reminderSince - 5 * 60000 && ev.end > now) this.onAlarm(ev);",
+  "replace": "",
+  "why": "no reminders"
+ },
+ {
+  "name": "calendar-delete",
+  "gate": "calendar-gate.py",
+  "file": "experiments/parent.js",
+  "find": "          await calendar.deleteItem(item);",
+  "replace": "",
+  "why": "Delete not deleting"
+ }
+]

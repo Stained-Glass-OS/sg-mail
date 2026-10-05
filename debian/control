@@ -1,0 +1,27 @@
+Source: sg-mail
+Section: mail
+Priority: optional
+Maintainer: Stained Glass OS <dev@stained-glass.example>
+Build-Depends: debhelper-compat (= 13), zip, python3
+Standards-Version: 4.7.0
+Homepage: https://github.com/Stained-Glass-OS/sg-mail
+Rules-Requires-Root: no
+
+Package: sg-mail
+Architecture: all
+Depends: ${misc:Depends}, thunderbird (>= 1:128)
+Recommends: fonts-inter
+Description: SG Mail: mail and calendar for Stained Glass OS (built on Thunderbird)
+ SG Mail is Stained Glass OS's mail and calendar program, in a window
+ arranged the way many office workers know: a ribbon, the folder pane with
+ Favorites and unread counts, the message list grouped by date, the reading
+ pane, a message window, and a calendar with Day, Work Week, Week and Month
+ views, meeting invitations and reminders.
+ .
+ It is built on Mozilla Thunderbird (Debian's thunderbird package,
+ unmodified), which does the work underneath: IMAP, POP and SMTP accounts,
+ sign-in to Microsoft (Outlook.com, Microsoft 365) and Google accounts on
+ their own login pages, autoconfiguration from the address, the calendar
+ (local, CalDAV and Internet calendars), the address book and offline
+ storage. SG Mail runs Thunderbird with a profile of its own (sg-mail) and
+ makes its main window SG Mail's with a Thunderbird extension.

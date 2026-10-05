@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<!--
+  SG Mail -- the message window: write a new message, a reply or a forward.
+
+  Copyright (C) 2026 Stained Glass OS contributors
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Untitled - Message</title>
+  <link rel="stylesheet" href="css/common.css">
+  <link rel="stylesheet" href="css/compose.css">
+  <script type="module" src="js/compose.js"></script>
+</head>
+<body class="compose">
+  <header id="ribbon" class="ribbon"></header>
+  <div id="bars"></div>
+  <section class="c-head">
+    <button id="send" class="c-send" title="Send (Ctrl+Enter)"><span id="send-icon"></span><span>Send</span></button>
+    <div class="c-fields">
+      <div class="c-row"><label for="from">From</label><select id="from"></select></div>
+      <div class="c-row"><button class="c-label-btn" data-field="to">To…</button><input id="to" type="text" autocomplete="off" spellcheck="false" aria-label="To"></div>
+      <div class="c-row"><button class="c-label-btn" data-field="cc">Cc…</button><input id="cc" type="text" autocomplete="off" spellcheck="false" aria-label="Cc"></div>
+      <div class="c-row" id="bcc-row" hidden><button class="c-label-btn" data-field="bcc">Bcc…</button><input id="bcc" type="text" autocomplete="off" spellcheck="false" aria-label="Bcc"></div>
+      <div class="c-row"><label for="subject">Subject</label><input id="subject" type="text" aria-label="Subject"></div>
+      <div class="c-row c-atts" id="atts-row" hidden><label>Attached</label><div id="atts" class="c-att-list"></div></div>
+    </div>
+  </section>
+  <div id="editor" class="c-editor" contenteditable="true" spellcheck="true" role="textbox" aria-multiline="true" aria-label="Message body"></div>
+  <div id="complete" class="c-complete" hidden></div>
+</body>
+</html>

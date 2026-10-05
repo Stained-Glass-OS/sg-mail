@@ -1,0 +1,52 @@
+#!/bin/sh
+# sg-mail -- start SG Mail: Thunderbird with SG Mail's own profile, whose
+# main window our extension makes SG Mail's (an Outlook-style window).
+#
+#   sg-mail                     the main window (or bring the running one up)
+#   sg-mail mailto:ADDR?...     a new message (SG Mail's message window)
+#   sg-mail FILE.eml|FILE.ics   open a message / import a calendar file
+#
+# The profile is SG Mail's alone ($SG_MAIL_PROFILE, default
+# $XDG_DATA_HOME/sg-mail/profile); a person's own Thunderbird profile is not
+# touched. Each start lays our extension and settings into it (a package
+# upgrade reaches it this way). A second start hands its arguments to the
+# running one (Thunderbird's remote service: same --name and profile).
+#
+# Copyright (C) 2026 Stained Glass OS contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+set -eu
+SHARE=${SG_MAIL_SHARE:-/usr/share/sg-mail}
+EXT_ID=sg-mail@stained-glass-os.org
+PROFILE=${SG_MAIL_PROFILE:-${XDG_DATA_HOME:-$HOME/.local/share}/sg-mail/profile}
+TB=${SG_MAIL_THUNDERBIRD:-thunderbird}
+
+umask 077
+mkdir -p "$PROFILE/extensions"
+# our extension: replaced when the package brought a new one
+xpi="$PROFILE/extensions/$EXT_ID.xpi"
+if ! cmp -s "$SHARE/$EXT_ID.xpi" "$xpi" 2>/dev/null; then
+    cp "$SHARE/$EXT_ID.xpi" "$xpi.new" && mv -f "$xpi.new" "$xpi"
+    # Thunderbird notices a changed add-on on its next start; forget its
+    # startup cache so it does not keep the old one
+    rm -f "$PROFILE/addonStartup.json.lz4" "$PROFILE/startupCache/"* 2>/dev/null || :
+fi
+# SG Mail's settings (user.js wins over what the profile keeps), then a
+# system policy's (an administrator's /etc/sg-mail/user.js), if any
+{
+    cat "$SHARE/user.js"
+    [ ! -r /etc/sg-mail/user.js ] || cat /etc/sg-mail/user.js
+} > "$PROFILE/user.js.new" && mv -f "$PROFILE/user.js.new" "$PROFILE/user.js"
+
+# Stained Glass OS's session shows X11 windows on its taskbar (XWayland)
+if [ -n "${DISPLAY:-}" ]; then
+    export MOZ_ENABLE_WAYLAND=0 GDK_BACKEND=x11
+fi
+
+for a in "$@"; do
+    case "$a" in
+        --help|-h)
+            sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+            exit 0 ;;
+    esac
+done
+exec "$TB" --name sg-mail --class sg-mail --profile "$PROFILE" "$@"

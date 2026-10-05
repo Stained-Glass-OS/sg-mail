@@ -1,0 +1,13 @@
+#!/usr/bin/make -f
+# SG Mail: no compiling -- the extension is zipped and laid out with the
+# launcher, desktop entry, icon and AppStream metadata (Makefile install).
+%:
+	dh $@
+
+override_dh_auto_build:
+	$(MAKE) xpi
+
+override_dh_auto_install:
+	$(MAKE) install DESTDIR=$(CURDIR)/debian/sg-mail PREFIX=/usr
+
+override_dh_auto_test:

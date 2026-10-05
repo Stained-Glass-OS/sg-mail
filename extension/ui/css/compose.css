@@ -1,0 +1,48 @@
+/*
+ * SG Mail -- the message and appointment windows.
+ *
+ * Copyright (C) 2026 Stained Glass OS contributors
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+body.compose, body.event { display: flex; flex-direction: column; }
+#bars { padding: 0 12px; }
+.c-head { display: flex; gap: 10px; padding: 10px 12px 6px; border-bottom: 1px solid var(--border); }
+.c-send {
+  flex: none; width: 72px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  border: 1px solid var(--border-strong); border-radius: 4px; background: var(--field); color: var(--text); cursor: default;
+}
+.c-send:hover { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.c-send .icon { width: 28px; height: 28px; }
+.c-fields { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.c-row { display: flex; align-items: center; gap: 8px; }
+.c-row > label, .c-label-btn { flex: none; width: 70px; text-align: left; color: var(--text); }
+.c-label-btn { border: 1px solid var(--border-strong); border-radius: 3px; background: var(--field); padding: 3px 8px; cursor: default; }
+.c-label-btn:hover { background: var(--hover); }
+.c-row input, .c-row select { flex: 1; min-width: 0; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; padding: 4px 2px; }
+.c-row select { flex: 0 1 auto; border: 1px solid var(--border-strong); border-radius: 3px; background: var(--field); padding: 3px 6px; }
+.c-row input:focus { border-bottom-color: var(--accent); box-shadow: none; }
+.c-att-list { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
+.c-att { display: flex; align-items: center; gap: 6px; border: 1px solid var(--border-strong); border-radius: 4px; padding: 2px 4px 2px 8px; max-width: 280px; }
+.c-att .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-att .s { color: var(--muted); font-size: 11px; }
+.c-att button { border: 0; background: transparent; display: inline-flex; padding: 2px; border-radius: 3px; color: var(--muted); }
+.c-att button:hover { background: var(--hover); color: var(--text); }
+.c-editor {
+  flex: 1; overflow: auto; padding: 14px 18px; outline: none; background: var(--bg); color: var(--text);
+  font: 11pt/1.4 "Inter", "Segoe UI", "Noto Sans", "DejaVu Sans", sans-serif; user-select: text; -moz-user-select: text;
+}
+.c-editor blockquote { margin: 0 0 0 4px; padding-left: 10px; border-left: 2px solid var(--border-strong); }
+.c-editor .sg-quote-head { border-top: 1px solid #e1e1e1; padding-top: 6px; margin-top: 18px; }
+.c-editor img { max-width: 100%; }
+.c-complete { position: fixed; z-index: 800; background: var(--bg); border: 1px solid var(--border-strong); box-shadow: var(--shadow); border-radius: 4px; max-height: 260px; overflow: auto; min-width: 320px; }
+.c-complete div { padding: 5px 10px; cursor: default; white-space: nowrap; }
+.c-complete div.active, .c-complete div:hover { background: var(--selected); }
+.c-complete .em { color: var(--muted); }
+/* the appointment window */
+.e-form { padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; border-bottom: 1px solid var(--border); }
+.e-row { display: flex; align-items: center; gap: 8px; }
+.e-row > label:first-child { width: 90px; flex: none; color: var(--muted); }
+.e-row input[type=text] { flex: 1; min-width: 0; }
+.e-row .when { display: flex; gap: 6px; align-items: center; }
+.e-desc { flex: 1; margin: 0; border: 0; resize: none; padding: 12px 16px; background: var(--bg); color: var(--text); outline: none; user-select: text; -moz-user-select: text; }
+.e-info { color: var(--muted); font-size: 12px; padding: 4px 14px; }

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright (C) 2026 Stained Glass OS contributors -->
+<component type="desktop-application">
+  <id>org.stainedglass.SGMail</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>AGPL-3.0-or-later</project_license>
+  <name>SG Mail</name>
+  <summary>Mail and calendar in a familiar window</summary>
+  <description>
+    <p>SG Mail is Stained Glass OS's mail and calendar program. Its window is
+    arranged the way many office workers know: a ribbon, the folder pane, the
+    message list grouped by date and the reading pane, and a calendar with
+    Day, Work Week, Week and Month views.</p>
+    <p>It is built on Mozilla Thunderbird, which does the work underneath:
+    IMAP, POP and SMTP accounts (with the provider's own sign-in page for
+    Microsoft and Google accounts), the calendar (local, CalDAV and Internet
+    calendars, meeting invitations), the address book and offline storage.</p>
+  </description>
+  <launchable type="desktop-id">sg-mail.desktop</launchable>
+  <url type="homepage">https://github.com/Stained-Glass-OS/sg-mail</url>
+  <developer id="org.stainedglass">
+    <name>Stained Glass OS contributors</name>
+  </developer>
+  <provides>
+    <binary>sg-mail</binary>
+  </provides>
+  <categories>
+    <category>Network</category>
+    <category>Email</category>
+    <category>Office</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-10-05"/>
+  </releases>
+</component>

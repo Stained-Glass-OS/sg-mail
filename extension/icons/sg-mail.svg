@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- SG Mail: an envelope of stained glass panes. Stained Glass OS contributors, AGPL-3.0-or-later -->
+  <rect x="4" y="12" width="56" height="40" rx="6" fill="#0f6cbd"/>
+  <path d="M4 18 L32 38 L60 18 L60 46 Q60 52 54 52 L10 52 Q4 52 4 46 Z" fill="#2b88d8"/>
+  <path d="M4 46 L24 30 L32 36 L40 30 L60 46 Q60 52 54 52 L10 52 Q4 52 4 46 Z" fill="#0b5aa3"/>
+  <path d="M10 12 L54 12 Q60 12 60 18 L32 38 L4 18 Q4 12 10 12 Z" fill="#ffffff"/>
+  <path d="M10 12 L32 12 L32 38 L4 18 Q4 12 10 12 Z" fill="#e8f2fc"/>
+  <path d="M4 18 L32 38 L60 18 M4 46 L24 30 M60 46 L40 30" fill="none" stroke="#073a6b" stroke-width="2" stroke-linejoin="round"/>
+  <rect x="4" y="12" width="56" height="40" rx="6" fill="none" stroke="#073a6b" stroke-width="2"/>
+  <circle cx="50" cy="44" r="9" fill="#f7a823" stroke="#073a6b" stroke-width="2"/>
+  <path d="M46 44 h8 M50 40 v8" stroke="#073a6b" stroke-width="2" stroke-linecap="round" opacity="0"/>
+  <rect x="45" y="40" width="10" height="8" rx="1.5" fill="none" stroke="#073a6b" stroke-width="1.6"/>
+  <path d="M45 42.5 h10 M48 39 v2.5 M52 39 v2.5" stroke="#073a6b" stroke-width="1.6" stroke-linecap="round"/>
+</svg>

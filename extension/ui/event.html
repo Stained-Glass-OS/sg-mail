@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<!--
+  SG Mail -- the appointment and meeting window.
+
+  Copyright (C) 2026 Stained Glass OS contributors
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Untitled - Appointment</title>
+  <link rel="stylesheet" href="css/common.css">
+  <link rel="stylesheet" href="css/compose.css">
+  <script type="module" src="js/event.js"></script>
+</head>
+<body class="event">
+  <header id="ribbon" class="ribbon"></header>
+  <div id="bars"></div>
+  <section class="e-form">
+    <div class="e-row" id="org-row" hidden><label>Organizer</label><span id="organizer"></span></div>
+    <div class="e-row"><label for="title">Title</label><input id="title" type="text" aria-label="Title"></div>
+    <div class="e-row" id="att-row" hidden><label for="attendees">Required</label><input id="attendees" type="text" autocomplete="off" spellcheck="false" aria-label="Attendees"></div>
+    <div class="e-row"><label for="location">Location</label><input id="location" type="text" aria-label="Location"></div>
+    <div class="e-row"><label>Start time</label><span class="when"><input id="start-date" type="date"><input id="start-time" type="time" step="900"><label><input id="all-day" type="checkbox"> All day event</label></span></div>
+    <div class="e-row"><label>End time</label><span class="when"><input id="end-date" type="date"><input id="end-time" type="time" step="900"></span></div>
+    <div class="e-row"><label for="calendar">Calendar</label><select id="calendar"></select></div>
+    <div class="e-info" id="recur-info"></div>
+  </section>
+  <textarea id="description" class="e-desc" aria-label="Description" placeholder=""></textarea>
+  <div id="complete" class="c-complete" hidden></div>
+</body>
+</html>

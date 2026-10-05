@@ -1,0 +1,16 @@
+sg-mail (0.1.0-1) unstable; urgency=medium
+
+  * First package: SG Mail, Stained Glass OS's mail and calendar, built on
+    Debian's unmodified Thunderbird. /usr/bin/sg-mail runs Thunderbird with
+    SG Mail's own profile; our extension (sg-mail@stained-glass-os.org)
+    makes its main window SG Mail's: ribbon, folder pane with Favorites and
+    unread counts, message list grouped by date, reading pane (HTML made
+    safe, pictures from the network on request), message window (rich text,
+    names from the address book, attachments, signatures, drafts, replies
+    under Outlook-style headers), Calendar (Day / Work Week / Week / Month,
+    appointments, recurrence, meetings and invitations, reminders as desktop
+    notifications, .ics import/export), Outlook's keys, mailto: handler,
+    light and dark. Gates: test/gate/*-gate.py with mutants (make test,
+    make test-mutation).
+
+ -- Stained Glass OS <dev@stained-glass.example>  Mon, 05 Oct 2026 18:00:00 +0000

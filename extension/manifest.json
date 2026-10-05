@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "SG Mail",
+  "description": "Stained Glass OS's mail and calendar window, on Thunderbird.",
+  "version": "0.1.0",
+  "author": "Stained Glass OS contributors",
+  "browser_specific_settings": {
+    "gecko": { "id": "sg-mail@stained-glass-os.org", "strict_min_version": "128.0" }
+  },
+  "background": { "scripts": ["background.js"] },
+  "permissions": [
+    "accountsRead", "accountsFolders", "accountsIdentities", "addressBooks",
+    "messagesRead", "messagesModify", "messagesMove", "messagesDelete", "messagesTags", "messagesUpdate",
+    "compose", "compose.send", "compose.save", "notifications", "storage", "unlimitedStorage", "tabs", "menus"
+  ],
+  "icons": { "32": "icons/sg-mail.svg", "64": "icons/sg-mail.svg" },
+  "experiment_apis": {
+    "sgmail": {
+      "schema": "experiments/schema.json",
+      "parent": {
+        "scopes": ["addon_parent"],
+        "paths": [["sgmail"]],
+        "script": "experiments/parent.js"
+      }
+    }
+  }
+}

@@ -1,0 +1,425 @@
+[
+ {
+  "namespace": "sgmail",
+  "functions": [
+   {
+    "name": "isActive",
+    "type": "function",
+    "async": true,
+    "parameters": []
+   },
+   {
+    "name": "getEnv",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "name",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "name": "writeTestFile",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "name",
+      "type": "string"
+     },
+     {
+      "name": "text",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "name": "takeOverWindow",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "windowId",
+      "type": "integer"
+     },
+     {
+      "name": "tabId",
+      "type": "integer"
+     }
+    ]
+   },
+   {
+    "name": "showOwnTab",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "windowId",
+      "type": "integer"
+     },
+     {
+      "name": "tabId",
+      "type": "integer"
+     }
+    ]
+   },
+   {
+    "name": "openTool",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "name",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "name": "getNewMail",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "folderId",
+      "type": "any",
+      "optional": true
+     }
+    ]
+   },
+   {
+    "name": "updateFolder",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "folderId",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "name": "isOffline",
+    "type": "function",
+    "async": true,
+    "parameters": []
+   },
+   {
+    "name": "setOffline",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "offline",
+      "type": "boolean"
+     }
+    ]
+   },
+   {
+    "name": "sendMessage",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "details",
+      "type": "object",
+      "additionalProperties": {
+       "type": "any"
+      }
+     }
+    ]
+   },
+   {
+    "name": "markDisposition",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "messageId",
+      "type": "integer"
+     },
+     {
+      "name": "kind",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "name": "messageState",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "messageId",
+      "type": "integer"
+     }
+    ]
+   },
+   {
+    "name": "remoteContentAllowed",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "email",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "name": "allowRemoteContent",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "email",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "name": "calendars",
+    "type": "function",
+    "async": true,
+    "parameters": []
+   },
+   {
+    "name": "calendarItems",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "calendarIds",
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "startMs",
+      "type": "number"
+     },
+     {
+      "name": "endMs",
+      "type": "number"
+     }
+    ]
+   },
+   {
+    "name": "calendarItem",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "calendarId",
+      "type": "string"
+     },
+     {
+      "name": "id",
+      "type": "string"
+     },
+     {
+      "name": "occurrence",
+      "type": "any",
+      "optional": true
+     }
+    ]
+   },
+   {
+    "name": "saveEvent",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "event",
+      "type": "object",
+      "additionalProperties": {
+       "type": "any"
+      }
+     },
+     {
+      "name": "options",
+      "type": "any",
+      "optional": true,
+      "additionalProperties": {
+       "type": "any"
+      }
+     }
+    ]
+   },
+   {
+    "name": "deleteEvent",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "calendarId",
+      "type": "string"
+     },
+     {
+      "name": "id",
+      "type": "string"
+     },
+     {
+      "name": "occurrence",
+      "type": "any",
+      "optional": true
+     },
+     {
+      "name": "options",
+      "type": "any",
+      "optional": true,
+      "additionalProperties": {
+       "type": "any"
+      }
+     }
+    ]
+   },
+   {
+    "name": "calendarImport",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "calendarId",
+      "type": "string"
+     },
+     {
+      "name": "ics",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "name": "calendarExport",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "calendarIds",
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   {
+    "name": "itipInfo",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "messageId",
+      "type": "integer"
+     },
+     {
+      "name": "ics",
+      "type": "string"
+     },
+     {
+      "name": "method",
+      "type": "any",
+      "optional": true
+     }
+    ]
+   },
+   {
+    "name": "itipRespond",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "messageId",
+      "type": "integer"
+     },
+     {
+      "name": "action",
+      "type": "string"
+     },
+     {
+      "name": "sendReply",
+      "type": "boolean",
+      "optional": true
+     }
+    ]
+   },
+   {
+    "name": "messageExtras",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "ids",
+      "type": "array",
+      "items": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "fetch",
+      "type": "boolean",
+      "optional": true
+     }
+    ]
+   },
+   {
+    "name": "testReply",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "id",
+      "type": "string"
+     },
+     {
+      "name": "reply",
+      "type": "object",
+      "additionalProperties": {
+       "type": "any"
+      }
+     }
+    ]
+   },
+   {
+    "name": "ensureCalendar",
+    "type": "function",
+    "async": true,
+    "parameters": []
+   }
+  ],
+  "events": [
+   {
+    "name": "onCalendarChanged",
+    "type": "function",
+    "parameters": []
+   },
+   {
+    "name": "onAlarm",
+    "type": "function",
+    "parameters": [
+     {
+      "name": "event",
+      "type": "object",
+      "additionalProperties": {
+       "type": "any"
+      }
+     }
+    ]
+   },
+   {
+    "name": "onTestRun",
+    "type": "function",
+    "parameters": [
+     {
+      "name": "request",
+      "type": "object",
+      "additionalProperties": {
+       "type": "any"
+      }
+     }
+    ]
+   }
+  ]
+ }
+]

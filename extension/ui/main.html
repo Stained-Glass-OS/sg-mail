@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<!--
+  SG Mail -- the main window: the ribbon, the folder pane (or the calendar's
+  date navigator) with the navigation bar under it, the message list and the
+  reading pane (or the calendar), and the status bar.
+
+  Copyright (C) 2026 Stained Glass OS contributors
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>SG Mail</title>
+  <link rel="stylesheet" href="css/common.css">
+  <link rel="stylesheet" href="css/main.css">
+  <script type="module" src="js/main.js"></script>
+</head>
+<body class="app">
+  <header id="ribbon" class="ribbon"></header>
+  <div id="workspace" class="workspace">
+    <aside id="side" class="side">
+      <div id="side-mail" class="side-panel">
+        <div id="folder-pane" class="folder-pane" role="tree" tabindex="0" aria-label="Folders"></div>
+      </div>
+      <div id="side-calendar" class="side-panel" hidden></div>
+      <nav id="nav-bar" class="nav-bar" aria-label="Navigation"></nav>
+    </aside>
+    <div class="splitter" data-for="side"></div>
+    <main id="module-mail" class="module">
+      <section id="list-pane" class="list-pane">
+        <div class="list-search">
+          <div class="search-box">
+            <input id="search" type="search" placeholder="Search Current Mailbox" aria-label="Search" autocomplete="off">
+            <button id="search-scope" class="search-scope" title="Where to search">Current Mailbox</button>
+          </div>
+        </div>
+        <div class="list-head">
+          <div class="list-filters" role="tablist">
+            <button class="list-filter active" data-filter="all" role="tab">All</button>
+            <button class="list-filter" data-filter="unread" role="tab">Unread</button>
+          </div>
+          <button id="list-sort" class="list-sort" title="Arrange by">By Date <span class="sort-dir">&#8595;</span></button>
+        </div>
+        <div id="message-list" class="message-list" role="listbox" tabindex="0" aria-label="Messages" aria-multiselectable="true">
+          <div class="ml-spacer"></div>
+        </div>
+      </section>
+      <div class="splitter" data-for="list-pane"></div>
+      <section id="reading-pane" class="reading-pane" aria-label="Reading pane"></section>
+    </main>
+    <main id="module-calendar" class="module" hidden></main>
+  </div>
+  <footer id="status-bar" class="status-bar">
+    <span id="status-left"></span>
+    <span id="status-right"></span>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,22 @@
+[Desktop Entry]
+Type=Application
+Name=SG Mail
+GenericName=Mail and Calendar
+Comment=Read and write email, and keep your calendar (built on Thunderbird)
+Exec=sg-mail %u
+Icon=sg-mail
+Terminal=false
+StartupNotify=true
+StartupWMClass=sg-mail
+Categories=Office;Email;Calendar;
+Keywords=email;mail;calendar;imap;exchange;microsoft;gmail;contacts;
+MimeType=x-scheme-handler/mailto;message/rfc822;application/x-extension-eml;
+Actions=NewMessage;Calendar;
+
+[Desktop Action NewMessage]
+Name=New Email
+Exec=sg-mail mailto:
+
+[Desktop Action Calendar]
+Name=Calendar
+Exec=sg-mail
