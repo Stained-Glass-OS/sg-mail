@@ -21,7 +21,10 @@ async function claimNow(win) {
   // a tab of ours the session brought back loaded before we were ready:
   // a fresh one instead
   for (const t of tabs) if (t.url && t.url.startsWith(MAIN_URL)) await browser.tabs.remove(t.id);
-  const ours = await browser.tabs.create({ windowId: win.id, url: MAIN_URL, active: true });
+  // the first start, with no account yet: Thunderbird's account setup stays
+  // in front (SG Mail's window is the tab beside it)
+  const setup = tabs.some(t => t.url === "about:accountsetup" && t.active);
+  const ours = await browser.tabs.create({ windowId: win.id, url: MAIN_URL, active: !setup });
   claimed.set(win.id, ours.id);
   await browser.sgmail.takeOverWindow(win.id, ours.id);
 }

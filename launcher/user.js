@@ -33,3 +33,5 @@ user_pref("calendar.alarms.showmissed", false);
 user_pref("mail.identity.default.reply_on_top", 1);
 // remote content in messages stays blocked (SG Mail's reading pane asks)
 user_pref("mailnews.message_display.disable_remote_image", true);
+// launcher/userChrome.css: no glimpse of Thunderbird's own view at start
+user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);

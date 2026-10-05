@@ -22,6 +22,7 @@ no-cache-reset|rm -f "$PROFILE/addonStartup.json.lz4"|: rm -f "$PROFILE/addonSta
 no-policy|cat "${SG_MAIL_POLICY:-/etc/sg-mail/user.js}"|:
 no-profile|--profile "$PROFILE"|
 no-class|--name sg-mail --class sg-mail|
+no-userchrome|cp "$SHARE/userChrome.css"|: cp "$SHARE/userChrome.css"
 M
     rm -rf "$W"; [ $rc = 0 ] && echo "RESULT: PASS" || echo "RESULT: FAIL"; exit $rc
 fi
@@ -34,6 +35,7 @@ mkdir -p "$W/share" "$W/home/.thunderbird/own.default"
 echo "the person's own profile" > "$W/home/.thunderbird/own.default/prefs.js"
 printf 'XPI-1' > "$W/share/sg-mail@stained-glass-os.org.xpi"
 cp "$HERE/launcher/user.js" "$W/share/user.js"
+cp "$HERE/launcher/userChrome.css" "$W/share/userChrome.css"
 printf 'user_pref("mail.server.default.check_time", 30);\n' > "$W/policy.js"
 cat > "$W/thunderbird" <<'T'
 #!/bin/sh
@@ -46,6 +48,8 @@ P="$W/home/.local/share/sg-mail/profile"
 run
 [ "$(cat "$P/extensions/sg-mail@stained-glass-os.org.xpi" 2>/dev/null)" = XPI-1 ] && pass "the extension is laid into SG Mail's profile" || fail "no extension in the profile"
 grep -q '"sgmail.profile", true' "$P/user.js" 2>/dev/null && pass "SG Mail's settings are in its user.js" || fail "no user.js"
+cmp -s "$P/chrome/userChrome.css" "$HERE/launcher/userChrome.css" && grep -q 'legacyUserProfileCustomizations.stylesheets", true' "$P/user.js" \
+    && pass "no glimpse of Thunderbird's own view at start (userChrome.css, enabled)" || fail "no userChrome.css"
 [ "$(tail -n1 "$P/user.js" 2>/dev/null)" = 'user_pref("mail.server.default.check_time", 30);' ] && pass "an administrator's settings come last (they win)" || fail "the policy is not last"
 grep -qx -- "--profile" "$W/args" && grep -qx -- "$P" "$W/args" && pass "Thunderbird starts with SG Mail's profile" || fail "not started with SG Mail's profile: $(tr '\n' ' ' < "$W/args")"
 grep -qx -- "--class" "$W/args" && grep -qx -- "sg-mail" "$W/args" && pass "its window class is sg-mail (the taskbar's icon)" || fail "no window class"

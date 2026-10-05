@@ -35,6 +35,7 @@ install: xpi
 	install -D -m0755 launcher/sg-mail $(DESTDIR)$(PREFIX)/bin/sg-mail
 	install -D -m0644 $(XPI) $(DESTDIR)$(PREFIX)/share/sg-mail/$(EXT_ID).xpi
 	install -D -m0644 launcher/user.js $(DESTDIR)$(PREFIX)/share/sg-mail/user.js
+	install -D -m0644 launcher/userChrome.css $(DESTDIR)$(PREFIX)/share/sg-mail/userChrome.css
 	install -D -m0644 data/sg-mail.desktop $(DESTDIR)$(PREFIX)/share/applications/sg-mail.desktop
 	install -D -m0644 data/sg-mail.svg $(DESTDIR)$(PREFIX)/share/icons/hicolor/scalable/apps/sg-mail.svg
 	for d in data/icons/*x*; do install -D -m0644 $$d/sg-mail.png $(DESTDIR)$(PREFIX)/share/icons/hicolor/$$(basename $$d)/apps/sg-mail.png; done

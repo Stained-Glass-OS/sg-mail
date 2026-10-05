@@ -294,6 +294,12 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
           if (nativeTab.tabNode) nativeTab.tabNode.setAttribute("sgmail-tab", "true");
           nativeTab.browser?.closest(".contentTabInstance")?.setAttribute("sgmail-panel", "true");
           const update = () => {
+            // Thunderbird's own mail view is not shown: a tool tab closing
+            // (account setup finished) comes back to SG Mail's
+            if (tabmail.currentTabInfo?.mode?.name === "mail3PaneTab" && tabmail.tabInfo.includes(nativeTab)) {
+              tabmail.switchToTab(nativeTab);
+              return;
+            }
             const own = tabmail.currentTabInfo === nativeTab;
             root.toggleAttribute("sgmail-own", own);
             // our page's title is the window's whole title ("Inbox - ... - SG Mail");

@@ -30,6 +30,9 @@ if ! cmp -s "$SHARE/$EXT_ID.xpi" "$xpi" 2>/dev/null; then
     # startup cache so it does not keep the old one
     rm -f "$PROFILE/addonStartup.json.lz4" "$PROFILE/startupCache/"* 2>/dev/null || :
 fi
+# no glimpse of Thunderbird's own view before SG Mail's window is up
+mkdir -p "$PROFILE/chrome"
+cp "$SHARE/userChrome.css" "$PROFILE/chrome/userChrome.css" 2>/dev/null || :
 # SG Mail's settings (user.js wins over what the profile keeps), then a
 # system policy's (an administrator's /etc/sg-mail/user.js), if any
 {

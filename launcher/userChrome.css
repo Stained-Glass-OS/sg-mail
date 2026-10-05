@@ -1,0 +1,14 @@
+/* SG Mail's profile: until SG Mail's window is up (the extension marks the
+ * main window [sgmail] a moment after Thunderbird starts), the window shows
+ * nothing rather than Thunderbird's own mail view for a second. Should the
+ * extension never come, Thunderbird's view appears after 8 seconds.
+ * Copyright (C) 2026 Stained Glass OS contributors
+ * SPDX-License-Identifier: AGPL-3.0-or-later */
+@keyframes sgmail-reveal { to { visibility: visible; } }
+#messengerWindow:not([sgmail]) #messengerBody,
+#messengerWindow:not([sgmail]) #navigation-toolbox,
+#messengerWindow:not([sgmail]) #spacesToolbar,
+#messengerWindow:not([sgmail]) #status-bar {
+  visibility: hidden;
+  animation: sgmail-reveal 0s linear 8s forwards;
+}

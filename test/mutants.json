@@ -11,8 +11,8 @@
   "name": "mail-read-remote",
   "gate": "mail-read-gate.py",
   "file": "ui/js/reader.js",
-  "find": "    let allowRemote = false;",
-  "replace": "    let allowRemote = true;",
+  "find": "this.state = { id: msg.id, body, cid, attachments: shownAttachments, allowRemote, sender, full };",
+  "replace": "this.state = { id: msg.id, body, cid, attachments: shownAttachments, allowRemote: true, sender, full };",
   "why": "remote pictures loading at once"
  },
  {

@@ -10,6 +10,7 @@ gate does not guard what it says.
 Copyright (C) 2026 Stained Glass OS contributors
 SPDX-License-Identifier: AGPL-3.0-or-later
 """
+import functools
 import json
 import os
 import shutil
@@ -22,6 +23,7 @@ AREA = os.environ.get("SG_AREA", "/var/tmp/sgmail")
 mutants = json.load(open(os.path.join(HERE, "mutants.json")))
 gates = [os.path.basename(g) for g in sys.argv[1:]]
 only = set(filter(None, os.environ.get("SG_MUTANTS", "").split(",")))
+print = functools.partial(print, flush=True)
 rc = 0
 for m in mutants:
     if gates and m["gate"] not in gates:

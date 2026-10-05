@@ -108,7 +108,7 @@ export function frameDocument(clean, { allowRemote = false, dark = false, plain 
   const base = `
     html { color-scheme: ${dark && plain ? "dark" : "light"}; }
     body { margin: 0; padding: 4px 2px 24px; font: 14px/1.45 "Inter", "Segoe UI", "Noto Sans", "DejaVu Sans", sans-serif;
-           color: ${dark && plain ? "#f3f2f1" : "#201f1e"}; background: ${dark && plain ? "#292929" : "#ffffff"}; overflow-wrap: anywhere; }
+           color: ${dark && plain ? "#f3f2f1" : "#201f1e"}; background: ${dark && plain ? "#1f1f1f" : "#ffffff"}; overflow-wrap: anywhere; }
     pre.plain { white-space: pre-wrap; font: 14px/1.45 "Inter", "Segoe UI", "Noto Sans", "DejaVu Sans", sans-serif; margin: 0; }
     blockquote.q { margin: 0 0 0 2px; padding-left: 10px; border-left: 2px solid ${dark && plain ? "#605e5c" : "#c8c6c4"}; color: ${dark && plain ? "#c8c6c4" : "#605e5c"}; }
     a { color: ${dark && plain ? "#479ef5" : "#0f6cbd"}; }

@@ -374,6 +374,8 @@ class Env:
             with open(os.path.join(prof, "extensions", EXT_ID), "w") as f:
                 f.write(ext + "\n")
         base = open(os.path.join(SRC, "launcher/user.js")).read()
+        os.makedirs(os.path.join(prof, "chrome"), exist_ok=True)
+        shutil.copy(os.path.join(SRC, "launcher/userChrome.css"), os.path.join(prof, "chrome", "userChrome.css"))
         with open(os.path.join(prof, "user.js"), "w") as f:
             f.write(base)
             for k, v in self.profile_prefs().items():

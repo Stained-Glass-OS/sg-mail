@@ -149,7 +149,7 @@ class App {
           ] },
           { label: "Tags", items: [
             { col: [
-              { id: "unread-read", icon: "mail-unread", label: "Unread/ Read", shortcut: "Ctrl+Q / Ctrl+U", action: () => m.toggleRead() },
+              { id: "unread-read", icon: "mail-unread", label: "Unread/Read", shortcut: "Ctrl+Q / Ctrl+U", action: () => m.toggleRead() },
               { id: "follow-up", icon: "flag", label: "Follow Up", shortcut: "Insert", action: () => m.flag(sel()) },
             ] },
           ] },
