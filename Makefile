@@ -58,10 +58,13 @@ $(ROOT)/usr/bin/thunderbird:
 	sh build/mkroot.sh $(ROOT)
 root: $(ROOT)/usr/bin/thunderbird
 
+# the gates run the extension packed, as the package installs it
 test: lint xpi root
-	@rc=0; for g in $(GATES); do echo "== $$g"; $(INROOT) $(PY) -u $$g || rc=1; done; exit $$rc
+	@sh test/launcher-gate.sh
+	@rc=0; for g in $(GATES); do echo "== $$g"; SG_MAIL_EXTENSION=xpi $(INROOT) $(PY) -u $$g || rc=1; done; exit $$rc
 
 test-mutation: xpi root
+	@sh test/launcher-gate.sh --mutants
 	@$(PY) test/mutate.py $(GATES)
 
 deb:

@@ -166,5 +166,53 @@
   "find": "          await calendar.deleteItem(item);",
   "replace": "",
   "why": "Delete not deleting"
+ },
+ {
+  "name": "invite-bar",
+  "gate": "invite-gate.py",
+  "file": "ui/js/reader.js",
+  "find": "    if (st.body.calendar) this.renderInvite(invite);",
+  "replace": "",
+  "why": "no Accept/Decline for meeting requests"
+ },
+ {
+  "name": "invite-reply",
+  "gate": "invite-gate.py",
+  "file": "experiments/parent.js",
+  "find": "partstats[action], sendReply ? \"AUTO\" : \"NONE\"",
+  "replace": "partstats[action], \"NONE\"",
+  "why": "answers never sent to the organizer"
+ },
+ {
+  "name": "look-chrome",
+  "gate": "look-gate.py",
+  "file": "experiments/parent.js",
+  "find": ":root[sgmail][sgmail-own] #navigation-toolbox { display: none !important; }",
+  "replace": "",
+  "why": "Thunderbird's toolbars over SG Mail's window"
+ },
+ {
+  "name": "look-dark",
+  "gate": "look-gate.py",
+  "file": "ui/js/util.js",
+  "find": "  const set = () => document.documentElement.classList.toggle(\"dark\", q.matches);",
+  "replace": "  const set = () => null;",
+  "why": "no dark look"
+ },
+ {
+  "name": "look-title",
+  "gate": "look-gate.py",
+  "file": "experiments/parent.js",
+  "find": "root.setAttribute(\"titlemodifier\", own ? \"\" : \"SG Mail\");",
+  "replace": "root.setAttribute(\"titlemodifier\", \"SG Mail\");",
+  "why": "the window title doubled"
+ },
+ {
+  "name": "look-local-calendar",
+  "gate": "look-gate.py",
+  "file": "experiments/parent.js",
+  "find": "          if (writable.length) return null;",
+  "replace": "          return null;",
+  "why": "no calendar for people without one"
  }
 ]

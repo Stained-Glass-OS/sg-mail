@@ -34,7 +34,7 @@ fi
 # system policy's (an administrator's /etc/sg-mail/user.js), if any
 {
     cat "$SHARE/user.js"
-    [ ! -r /etc/sg-mail/user.js ] || cat /etc/sg-mail/user.js
+    [ ! -r "${SG_MAIL_POLICY:-/etc/sg-mail/user.js}" ] || cat "${SG_MAIL_POLICY:-/etc/sg-mail/user.js}"
 } > "$PROFILE/user.js.new" && mv -f "$PROFILE/user.js.new" "$PROFILE/user.js"
 
 # Stained Glass OS's session shows X11 windows on its taskbar (XWayland)

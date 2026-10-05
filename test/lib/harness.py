@@ -363,7 +363,11 @@ class Env:
         self.tb.wait(30)
         self.xvfb.terminate()
         self.xvfb.wait(5)
+        # the extension as source (a proxy file to it), or packed as the
+        # package ships it (SG_MAIL_EXTENSION=xpi: build/out's .xpi)
         ext = os.environ.get("SG_MAIL_EXTENSION") or os.path.join(SRC, "extension")
+        if ext == "xpi":
+            ext = os.path.join(SRC, "build/out", EXT_ID + ".xpi")
         if ext.endswith(".xpi"):
             shutil.copy(ext, os.path.join(prof, "extensions", EXT_ID + ".xpi"))
         else:
