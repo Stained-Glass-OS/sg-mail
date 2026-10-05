@@ -87,7 +87,9 @@ def make_http(root, hits, extra):
 class Env:
     def __init__(self, name, dark=False, extra_prefs=None, with_caldav=True, accounts=("alice@example.test",), keep=False):
         self.name = name
-        self.dir = f"/var/tmp/sgmail/gates/{name}"
+        # SG_GATE_TAG: runs of one gate side by side (the mutants) keep apart
+        tag = os.environ.get("SG_GATE_TAG", "")
+        self.dir = f"/var/tmp/sgmail/gates/{name}" + (f"-{tag}" if tag else "")
         if os.path.exists(self.dir):
             shutil.rmtree(self.dir)
         os.makedirs(self.dir)

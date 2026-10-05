@@ -214,5 +214,21 @@
   "find": "          if (writable.length) return null;",
   "replace": "          return null;",
   "why": "no calendar for people without one"
+ },
+ {
+  "name": "look-first-run",
+  "gate": "look-gate.py",
+  "file": "background.js",
+  "find": "  const setup = !accounts.some(a => a.type !== \"none\" && a.type !== \"local\");",
+  "replace": "  const setup = false;",
+  "why": "SG Mail's window over the first start's account setup"
+ },
+ {
+  "name": "look-back-to-ours",
+  "gate": "look-gate.py",
+  "file": "experiments/parent.js",
+  "find": "            if (tabmail.currentTabInfo?.mode?.name === \"mail3PaneTab\" && tabmail.tabInfo.includes(nativeTab)) {",
+  "replace": "            if (false) {",
+  "why": "Thunderbird's own view after a tool tab closes"
  }
 ]

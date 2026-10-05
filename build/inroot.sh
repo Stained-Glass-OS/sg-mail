@@ -8,7 +8,7 @@
 # A checkout outside the work area (a release worktree) is seen at
 # /var/tmp/sg-mail-src inside, and SG_CWD under it is translated there.
 # SG_NONET=1: no network but its own loopback (the gates: nothing can reach
-# a real mail provider).
+# a real mail provider), and a PID namespace of its own (nothing outlives it).
 ROOT=${SG_ROOT:-/var/tmp/sgmail/root-tb}
 AREA=${SG_AREA:-/var/tmp/sgmail}
 SRC=$(cd "$(dirname "$0")/.." && pwd)
@@ -22,7 +22,7 @@ case "$SRC/" in
     *) MAP="--bind $SRC /var/tmp/sg-mail-src"
        case "$CWD/" in "$SRC"/*) CWD=/var/tmp/sg-mail-src${CWD#"$SRC"} ;; esac ;;
 esac
-NET=; [ -n "${SG_NONET:-}" ] && NET=--unshare-net
+NET=; [ -n "${SG_NONET:-}" ] && NET="--unshare-net --unshare-pid"
 exec bwrap --die-with-parent $NET --ro-bind "$ROOT" / --tmpfs /var/tmp --bind "$AREA" "$AREA" $MAP \
   --ro-bind "$AREA/etc/passwd" /etc/passwd --ro-bind "$AREA/etc/group" /etc/group \
   --dev /dev --proc /proc --tmpfs /tmp --tmpfs /run --tmpfs /dev/shm \

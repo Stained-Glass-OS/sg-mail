@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from harness import Env, Gate, message, USERS  # noqa: E402
 
 g = Gate("look")
-SHOTS = os.environ.get("SG_MAIL_SHOTS", "/var/tmp/sgmail/screenshots")
+SHOTS = os.environ.get("SG_MAIL_SHOTS") or ("/var/tmp/sgmail/gates/shots-" + os.environ["SG_GATE_TAG"] if os.environ.get("SG_GATE_TAG") else "/var/tmp/sgmail/screenshots")
 os.makedirs(SHOTS, exist_ok=True)
 
 
@@ -213,6 +213,36 @@ try:
     d = env.wait_ui("calendar", lambda r: len(r["calendars"]) >= 1, timeout=40)
     g.check([c["name"] for c in d["calendars"]] == ["Calendar"] and not d["calendars"][0]["readOnly"],
             "with no calendar to write in, SG Mail makes a local Calendar", d["calendars"])
+finally:
+    env.stop()
+
+# ---- the very first start, no account: Thunderbird's account setup in front ----------------
+env = Env("look-first", with_caldav=False, accounts=())
+try:
+    env.start_servers()
+    env.make_profile()
+    env.start_thunderbird()
+    st = None
+    for _ in range(60):
+        st = env.chrome("""
+          const w = Services.wm.getMostRecentWindow("mail:3pane");
+          const tm = w.document.getElementById("tabmail");
+          return { current: tm.currentTabInfo.browser?.currentURI.spec || tm.currentTabInfo.mode.name,
+                   ours: tm.tabInfo.some(t => t.browser && t.browser.currentURI.spec.includes("/ui/main.html")) };""")
+        if st["ours"]:
+            break
+        time.sleep(1)
+    time.sleep(2)
+    st = env.chrome("""const tm = Services.wm.getMostRecentWindow("mail:3pane").document.getElementById("tabmail");
+      return { current: tm.currentTabInfo.browser?.currentURI.spec || tm.currentTabInfo.mode.name,
+               ours: tm.tabInfo.some(t => t.browser && t.browser.currentURI.spec.includes("/ui/main.html")) };""")
+    g.check(st["ours"] and st["current"] == "about:accountsetup", "the first start, with no account: Thunderbird's account setup in front, SG Mail beside it", st)
+    env.chrome("""const tm = Services.wm.getMostRecentWindow("mail:3pane").document.getElementById("tabmail");
+      tm.closeTab(tm.currentTabInfo); return true;""")
+    time.sleep(1)
+    st = env.chrome("""const tm = Services.wm.getMostRecentWindow("mail:3pane").document.getElementById("tabmail");
+      return tm.currentTabInfo.browser?.currentURI.spec || tm.currentTabInfo.mode.name;""")
+    g.check("/ui/main.html" in st, "closing it comes back to SG Mail, not Thunderbird's own view", st)
 finally:
     env.stop()
 
