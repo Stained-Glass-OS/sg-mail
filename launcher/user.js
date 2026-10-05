@@ -22,7 +22,8 @@ user_pref("mail.inappnotifications.enabled", false);
 user_pref("datareporting.policy.dataSubmissionEnabled", false);
 user_pref("datareporting.healthreport.uploadEnabled", false);
 user_pref("toolkit.telemetry.enabled", false);
-// Debian updates Thunderbird; SG Mail's add-on comes with its package
+// apt updates Thunderbird (its package also turns the updater off by
+// policy); SG Mail's add-on comes with its package
 user_pref("app.update.enabled", false);
 user_pref("extensions.update.enabled", false);
 // SG Mail shows new mail and reminders itself (desktop notifications)

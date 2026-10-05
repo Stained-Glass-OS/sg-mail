@@ -1,4 +1,4 @@
-# SG Mail -- Stained Glass OS's mail and calendar: Thunderbird (Debian's,
+# SG Mail -- Stained Glass OS's mail and calendar: Thunderbird (Mozilla's,
 # unmodified) underneath, our window on top (a Thunderbird extension).
 #
 #   make xpi            the extension             -> build/out/sg-mail@stained-glass-os.org.xpi
@@ -9,6 +9,8 @@
 #   make deb            the package sg-mail       -> ../sg-mail_*_all.deb
 #   make root           the test root (Debian trixie: Thunderbird, Xvfb,
 #                       Dovecot, Radicale, aiosmtpd), made once, rootless
+#   make test TB_DEB=.. the gates against that thunderbird package (Stained
+#                       Glass OS's, Mozilla's build), in a root of its own
 #
 # The gates run Thunderbird with local stand-in servers only, in a network
 # namespace of their own: nothing reaches a real mail provider.
@@ -17,7 +19,14 @@ OUT     ?= build/out
 XPI      = $(OUT)/$(EXT_ID).xpi
 DESTDIR ?=
 PREFIX  ?= /usr
+# TB_DEB=path/thunderbird_*.deb: the gates against that Thunderbird package
+# (sg-image's, Mozilla's build) put over Debian's, in a root of its own
+TB_DEB  ?=
+ifneq ($(TB_DEB),)
+ROOT    ?= /var/tmp/sgmail/root-tb-$(shell dpkg-deb -f $(TB_DEB) Version | tr : _)
+else
 ROOT    ?= /var/tmp/sgmail/root-tb
+endif
 PY      ?= python3
 GATES   ?= $(sort $(wildcard test/gate/*-gate.py))
 INROOT   = SG_NONET=1 SG_ROOT=$(ROOT) SG_CWD=$(CURDIR) sh build/inroot.sh
@@ -56,7 +65,7 @@ lint:
 	@echo "lint: OK"
 
 $(ROOT)/usr/bin/thunderbird:
-	sh build/mkroot.sh $(ROOT)
+	sh build/mkroot.sh $(ROOT) $(TB_DEB)
 root: $(ROOT)/usr/bin/thunderbird
 
 # the gates run the extension packed, as the package installs it

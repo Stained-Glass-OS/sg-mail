@@ -2,9 +2,11 @@
 ours alone (Thunderbird's toolbars, spaces bar and tab strip hidden), titled
 "<folder> - <account> - SG Mail", light or dark as the system is; a person
 with no calendar gets a local Calendar; File > Add Account is Thunderbird's
-own account setup, which finds a provider's settings by its lookup
-(ISPDB-style autoconfig, here a local stand-in) and makes the account,
-which SG Mail's folder pane then shows; Thunderbird knows how to sign in to
+own account setup (Thunderbird 145+: the Account Hub over SG Mail's window,
+which also offers Exchange and Microsoft 365 accounts; 140: its setup tab),
+which finds a provider's settings by its lookup (ISPDB-style autoconfig,
+here a local stand-in) and makes the account, which SG Mail's folder pane
+then shows; Thunderbird knows how to sign in to
 Microsoft (Outlook.com, Microsoft 365) and Google mail with their own login
 pages (OAuth2 with Mozilla's registration: nothing to register for SG Mail).
 Screenshots of the main window, the calendar and the message window, light
@@ -30,6 +32,27 @@ os.makedirs(SHOTS, exist_ok=True)
 def lum(rgb):
     nums = [int(x) for x in rgb.replace("rgba", "").replace("rgb", "").strip("()").split(",")[:3]]
     return sum(nums) / 3
+
+
+# Thunderbird 145+'s Account Hub: a dialog in shadow DOM over the main window
+HUB = """
+const w = Services.wm.getMostRecentWindow("mail:3pane"), d = w.document;
+const hub = d.querySelector("account-hub-container");
+const deep = (root, sel) => { const out = []; const walk = n => { out.push(...n.querySelectorAll(sel));
+  for (const e of n.querySelectorAll("*")) if (e.shadowRoot) walk(e.shadowRoot); }; if (root) walk(root); return out; };
+const shown = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+const q = sel => deep(hub?.shadowRoot, sel).filter(shown);
+"""
+# which account setup came up: the Account Hub (true) or the tab (false)
+WHICH_SETUP = """
+const w = Services.wm.getMostRecentWindow("mail:3pane"), d = w.document;
+for (let i = 0; i < 100; i++) {
+  if (d.querySelector("account-hub-container")?.modal?.open) return true;
+  if (d.getElementById("tabmail").tabInfo.some(t => t.browser?.currentURI.spec == "about:accountsetup")) return false;
+  await new Promise(r => w.setTimeout(r, 100));
+}
+return null;
+"""
 
 
 def seed(env):
@@ -123,57 +146,105 @@ try:
     title = env.chrome("""return Services.wm.getMostRecentWindow("mail:3pane").document.title;""")
     g.check(title == "Inbox - alice@example.test - SG Mail", "the window's title: Inbox - alice@example.test - SG Mail", title)
 
-    # File > Add Account: Thunderbird's account setup, with the provider lookup
+    # File > Add Account: Thunderbird's account setup, with the provider lookup.
+    # Thunderbird 140 (Debian's) has it as a tab (about:accountsetup);
+    # 145 and later (Mozilla's build, Stained Glass OS's package) as the
+    # Account Hub, a dialog over the window -- where Exchange (EWS) and
+    # Microsoft 365 (Graph) accounts are offered.
     env.ui("click", selector="#rt-file")
     env.ui("menu", label="Add Account…")
-    tab = env.chrome("""
-      const w = Services.wm.getMostRecentWindow("mail:3pane");
-      for (let i = 0; i < 50; i++) {
-        const t = w.document.getElementById("tabmail").currentTabInfo;
-        if (t.browser && t.browser.currentURI.spec == "about:accountsetup" && t.browser.contentDocument?.getElementById("email")) break;
-        await new Promise(r => w.setTimeout(r, 200));
-      }
-      const d = w.document;
-      return { url: d.getElementById("tabmail").currentTabInfo.browser?.currentURI.spec, own: d.documentElement.hasAttribute("sgmail-own"),
-               tabs: d.getElementById("navigation-toolbox").getBoundingClientRect().height > 0 };""")
-    g.check(tab["url"] == "about:accountsetup", "File > Add Account opens Thunderbird's account setup", tab)
-    g.check(not tab["own"] and tab["tabs"], "with the tab strip back to return to SG Mail", tab)
-    found = env.chrome("""
-      const w = Services.wm.getMostRecentWindow("mail:3pane");
-      const b = w.document.getElementById("tabmail").currentTabInfo.browser;
-      const d = b.contentDocument, cw = b.contentWindow;
-      const set = (id, v) => { const e = d.getElementById(id); e.focus(); e.value = v; e.dispatchEvent(new cw.Event("input", {bubbles: true})); };
-      set("realname", args.name); set("email", args.email); set("password", args.pw);
-      d.getElementById("continueButton").click();
-      for (let i = 0; i < 150; i++) {
-        const host = d.querySelector("#incomingHostname, #incomingHostnameDisplay");
-        const ok = d.getElementById("createButton");
-        if (ok && !ok.hidden && !ok.disabled && d.getElementById("protocolIMAP")?.checked !== undefined) break;
-        await new Promise(r => w.setTimeout(r, 200));
-      }
-      return { text: d.body.innerText.slice(0, 3000), create: !!d.getElementById("createButton") && !d.getElementById("createButton").hidden };""",
-        {"name": "Carol Autoconf", "email": "carol@autoconf.test", "pw": USERS["carol@autoconf.test"][1]}, timeout_ms=90000)
+    hub = env.chrome(WHICH_SETUP)
+    print("account setup:", "the Account Hub" if hub else "the about:accountsetup tab")
+    if hub:
+        tab = env.chrome(HUB + """
+          for (let i = 0; i < 50 && !(hub?.modal?.open && q("#email")[0]); i++) await new Promise(r => w.setTimeout(r, 200));
+          const tm = d.getElementById("tabmail");
+          return { open: !!hub?.modal?.open, email: !!q("#email")[0], own: d.documentElement.hasAttribute("sgmail-own"),
+                   current: tm.currentTabInfo.browser?.currentURI.spec || "" };""")
+        g.check(tab["open"] and tab["email"], "File > Add Account opens Thunderbird's account setup (the Account Hub)", tab)
+        g.check(tab["own"] and "/ui/main.html" in tab["current"], "over SG Mail's window, which stays beneath it", tab)
+        found = env.chrome(HUB + """
+          const set = (id, v) => { const e = q("#" + id)[0]; e.focus(); e.value = v; e.dispatchEvent(new w.Event("input", {bubbles: true, composed: true})); };
+          set("realName", args.name); set("email", args.email);
+          for (let i = 0; i < 25 && q("#forward")[0]?.disabled; i++) await new Promise(r => w.setTimeout(r, 200));
+          q("#forward")[0].click();
+          let text = "";
+          for (let i = 0; i < 150; i++) {
+            text = q(".account-hub-view:not([hidden])").map(e => e.innerText).join("\\n");
+            if (q("#emailConfigFoundSubview")[0] && /127\\.0\\.0\\.1/.test(text)) break;
+            await new Promise(r => w.setTimeout(r, 200));
+          }
+          return { text: text.slice(0, 3000) };""", {"name": "Carol Autoconf", "email": "carol@autoconf.test"}, timeout_ms=90000)
+    else:
+        tab = env.chrome("""
+          const w = Services.wm.getMostRecentWindow("mail:3pane");
+          for (let i = 0; i < 50; i++) {
+            const t = w.document.getElementById("tabmail").currentTabInfo;
+            if (t.browser && t.browser.currentURI.spec == "about:accountsetup" && t.browser.contentDocument?.getElementById("email")) break;
+            await new Promise(r => w.setTimeout(r, 200));
+          }
+          const d = w.document;
+          return { url: d.getElementById("tabmail").currentTabInfo.browser?.currentURI.spec, own: d.documentElement.hasAttribute("sgmail-own"),
+                   tabs: d.getElementById("navigation-toolbox").getBoundingClientRect().height > 0 };""")
+        g.check(tab["url"] == "about:accountsetup", "File > Add Account opens Thunderbird's account setup", tab)
+        g.check(not tab["own"] and tab["tabs"], "with the tab strip back to return to SG Mail", tab)
+        found = env.chrome("""
+          const w = Services.wm.getMostRecentWindow("mail:3pane");
+          const b = w.document.getElementById("tabmail").currentTabInfo.browser;
+          const d = b.contentDocument, cw = b.contentWindow;
+          const set = (id, v) => { const e = d.getElementById(id); e.focus(); e.value = v; e.dispatchEvent(new cw.Event("input", {bubbles: true})); };
+          set("realname", args.name); set("email", args.email); set("password", args.pw);
+          d.getElementById("continueButton").click();
+          for (let i = 0; i < 150; i++) {
+            const host = d.querySelector("#incomingHostname, #incomingHostnameDisplay");
+            const ok = d.getElementById("createButton");
+            if (ok && !ok.hidden && !ok.disabled && d.getElementById("protocolIMAP")?.checked !== undefined) break;
+            await new Promise(r => w.setTimeout(r, 200));
+          }
+          return { text: d.body.innerText.slice(0, 3000), create: !!d.getElementById("createButton") && !d.getElementById("createButton").hidden };""",
+            {"name": "Carol Autoconf", "email": "carol@autoconf.test", "pw": USERS["carol@autoconf.test"][1]}, timeout_ms=90000)
     g.check(any("/ispdb/autoconf.test" in h for h in env.hits), "the account setup asks the provider lookup (ISPDB) for autoconf.test", env.hits)
     g.check("127.0.0.1" in found["text"] and "IMAP" in found["text"], "and finds its IMAP and SMTP settings", found["text"][:1500])
-    made = env.chrome("""
-      const w = Services.wm.getMostRecentWindow("mail:3pane");
-      const b = w.document.getElementById("tabmail").currentTabInfo.browser;
-      const d = b.contentDocument;
-      d.getElementById("createButton").click();
-      for (let i = 0; i < 40; i++) {
-        // plain-text servers on this machine: Thunderbird asks to confirm the risk
-        const dlg = d.getElementById("insecureDialog");
-        if (dlg && dlg.open) {
-          const risk = d.getElementById("acknowledgeWarning");
-          risk.checked = true;
-          risk.dispatchEvent(new b.contentWindow.Event("change", {bubbles: true}));
-          d.getElementById("insecureConfirmButton").click();
-        }
-        const { MailServices } = ChromeUtils.importESModule("resource:///modules/MailServices.sys.mjs");
-        if (MailServices.accounts.allIdentities.some(i => i.email == "carol@autoconf.test")) return true;
-        await new Promise(r => w.setTimeout(r, 500));
-      }
-      return d.body.innerText.slice(0, 2000);""", timeout_ms=60000)
+    if hub:
+        made = env.chrome(HUB + """
+          const { MailServices } = ChromeUtils.importESModule("resource:///modules/MailServices.sys.mjs");
+          const has = () => MailServices.accounts.allIdentities.some(i => i.email == "carol@autoconf.test");
+          for (let i = 0; i < 120 && !has(); i++) {
+            // the settings found -> the password -> made
+            const pw = q("#password")[0];
+            if (pw && pw.value != args.pw) { pw.focus(); pw.value = args.pw; pw.dispatchEvent(new w.Event("input", {bubbles: true, composed: true})); }
+            const f = q("#forward")[0];
+            if (f && !f.disabled && i % 4 == 0) f.click();
+            await new Promise(r => w.setTimeout(r, 500));
+          }
+          if (!has()) return q(".account-hub-view:not([hidden])").map(e => e.innerText).join("\\n").slice(0, 2000);
+          // the last page (encryption, signature, another address): Finish
+          for (let i = 0; i < 40 && hub.modal.open; i++) {
+            const f = q("#forward")[0];
+            if (f && !f.disabled) f.click();
+            await new Promise(r => w.setTimeout(r, 250));
+          }
+          return hub.modal.open ? "the hub stayed open after Finish" : true;""", {"pw": USERS["carol@autoconf.test"][1]}, timeout_ms=90000)
+    else:
+        made = env.chrome("""
+          const w = Services.wm.getMostRecentWindow("mail:3pane");
+          const b = w.document.getElementById("tabmail").currentTabInfo.browser;
+          const d = b.contentDocument;
+          d.getElementById("createButton").click();
+          for (let i = 0; i < 40; i++) {
+            // plain-text servers on this machine: Thunderbird asks to confirm the risk
+            const dlg = d.getElementById("insecureDialog");
+            if (dlg && dlg.open) {
+              const risk = d.getElementById("acknowledgeWarning");
+              risk.checked = true;
+              risk.dispatchEvent(new b.contentWindow.Event("change", {bubbles: true}));
+              d.getElementById("insecureConfirmButton").click();
+            }
+            const { MailServices } = ChromeUtils.importESModule("resource:///modules/MailServices.sys.mjs");
+            if (MailServices.accounts.allIdentities.some(i => i.email == "carol@autoconf.test")) return true;
+            await new Promise(r => w.setTimeout(r, 500));
+          }
+          return d.body.innerText.slice(0, 2000);""", timeout_ms=60000)
     g.check(made is True, "the account is made", made)
     if made is True:
         env.chrome("""const w = Services.wm.getMostRecentWindow("mail:3pane");
@@ -181,6 +252,21 @@ try:
           const t = tm.tabInfo.find(t => t.browser && t.browser.currentURI.spec == "about:accountsetup"); if (t) tm.closeTab(t); return true;""")
         d = env.wait_ui("mail", lambda r: "# carol@autoconf.test" in r["tree"], timeout=60)
         g.check(True, "and SG Mail's folder pane shows it")
+
+    if hub:
+        # Exchange: the Account Hub offers Exchange Web Services and, for
+        # Microsoft 365, Microsoft Graph accounts (Thunderbird 154+'s Release
+        # channel); it picks them when the lookup (Autodiscover) finds them
+        ex = env.chrome(HUB + """
+          const t = d.getElementById("accountHubEmailConfigFoundTemplate");
+          const ids = t ? [...t.content.querySelectorAll("[id]")].map(e => e.id) : [];
+          return { ews: ids.includes("ews"), graph: ids.includes("graph"),
+                   graphOn: Services.prefs.getBoolPref("mail.graph.enabled", false),
+                   graphCalendar: Services.prefs.getBoolPref("calendar.graph.enabled", false),
+                   autodiscover: !!ChromeUtils.importESModule("resource:///modules/accountcreation/ExchangeAutoDiscover.sys.mjs") };""")
+        print("exchange:", ex)
+        g.check(ex["ews"] and ex["graph"] and ex["graphOn"] and ex["autodiscover"],
+                "Thunderbird's account setup offers Exchange (EWS) and Microsoft 365 (Graph) mail accounts, found by Autodiscover", ex)
 
     # Microsoft and Google: Thunderbird's own sign-in (no client id of ours)
     prov = env.chrome("""
@@ -233,10 +319,31 @@ try:
             break
         time.sleep(1)
     time.sleep(2)
-    st = env.chrome("""const tm = Services.wm.getMostRecentWindow("mail:3pane").document.getElementById("tabmail");
-      return { current: tm.currentTabInfo.browser?.currentURI.spec || tm.currentTabInfo.mode.name,
-               ours: tm.tabInfo.some(t => t.browser && t.browser.currentURI.spec.includes("/ui/main.html")) };""")
-    g.check(st["ours"] and st["current"] == "about:accountsetup", "the first start, with no account: Thunderbird's account setup in front, SG Mail beside it", st)
+    hub = env.chrome(WHICH_SETUP)
+    if hub:
+        st = env.chrome(HUB + """
+          const tm = d.getElementById("tabmail");
+          return { current: tm.currentTabInfo.browser?.currentURI.spec || tm.currentTabInfo.mode.name, open: !!hub?.modal?.open,
+                   email: !!q("#email")[0], ours: tm.tabInfo.some(t => t.browser && t.browser.currentURI.spec.includes("/ui/main.html")) };""")
+        g.check(st["ours"] and st["open"] and st["email"] and "/ui/main.html" in st["current"],
+                "the first start, with no account: Thunderbird's account setup (the Account Hub) in front, over SG Mail's window", st)
+        env.chrome(HUB + """q("#closeButton")[0].click(); for (let i = 0; i < 20 && hub.modal.open; i++) await new Promise(r => w.setTimeout(r, 100)); return true;""")
+        time.sleep(1)
+        st = env.chrome("""const d = Services.wm.getMostRecentWindow("mail:3pane").document, tm = d.getElementById("tabmail");
+          return { current: tm.currentTabInfo.browser?.currentURI.spec || tm.currentTabInfo.mode.name, own: d.documentElement.hasAttribute("sgmail-own") };""")
+        g.check("/ui/main.html" in st["current"] and st["own"], "closing it leaves SG Mail's window", st)
+        # a tool that is a tab (Account Settings): closing it comes back to SG Mail
+        env.ui("click", selector="#rt-file")
+        env.ui("menu", label="Account Settings…")
+        st = env.chrome("""const w = Services.wm.getMostRecentWindow("mail:3pane"), tm = w.document.getElementById("tabmail");
+          for (let i = 0; i < 50 && tm.currentTabInfo.browser?.currentURI.spec != "about:accountsettings"; i++) await new Promise(r => w.setTimeout(r, 200));
+          return tm.currentTabInfo.browser?.currentURI.spec || tm.currentTabInfo.mode.name;""")
+        g.check(st == "about:accountsettings", "File > Account Settings opens Thunderbird's account settings", st)
+    else:
+        st = env.chrome("""const tm = Services.wm.getMostRecentWindow("mail:3pane").document.getElementById("tabmail");
+          return { current: tm.currentTabInfo.browser?.currentURI.spec || tm.currentTabInfo.mode.name,
+                   ours: tm.tabInfo.some(t => t.browser && t.browser.currentURI.spec.includes("/ui/main.html")) };""")
+        g.check(st["ours"] and st["current"] == "about:accountsetup", "the first start, with no account: Thunderbird's account setup in front, SG Mail beside it", st)
     env.chrome("""const tm = Services.wm.getMostRecentWindow("mail:3pane").document.getElementById("tabmail");
       tm.closeTab(tm.currentTabInfo); return true;""")
     time.sleep(1)

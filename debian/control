@@ -18,8 +18,9 @@ Description: SG Mail: mail and calendar for Stained Glass OS (built on Thunderbi
  pane, a message window, and a calendar with Day, Work Week, Week and Month
  views, meeting invitations and reminders.
  .
- It is built on Mozilla Thunderbird (Debian's thunderbird package,
- unmodified), which does the work underneath: IMAP, POP and SMTP accounts,
+ It is built on Mozilla Thunderbird (unmodified: Stained Glass OS's
+ package of Mozilla's official build, or Debian's), which does the work
+ underneath: IMAP, POP and SMTP accounts, Exchange and Microsoft 365 mail,
  sign-in to Microsoft (Outlook.com, Microsoft 365) and Google accounts on
  their own login pages, autoconfiguration from the address, the calendar
  (local, CalDAV and Internet calendars), the address book and offline

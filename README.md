@@ -18,14 +18,19 @@ gate takes them against the test servers.)
 
 ## Thunderbird underneath
 
-SG Mail is built on **Mozilla Thunderbird** (Debian's `thunderbird` package,
-not modified). Thunderbird does the mail and calendar work: IMAP, POP and
-SMTP accounts, the provider's own sign-in page for Microsoft (Outlook.com,
+SG Mail is built on **Mozilla Thunderbird**, not modified. On Stained Glass
+OS that is the `thunderbird` package of its own apt repository: Mozilla's
+official Linux build of the current Release (sg-image's `thunderbird/`,
+verified against Mozilla's signed checksums, rebuilt when Mozilla releases;
+it replaces Debian's ESR package in place). SG Mail also runs on Debian's
+Thunderbird 140. Thunderbird does the mail and calendar work: IMAP, POP and
+SMTP accounts, Exchange (EWS) and Microsoft 365 (Microsoft Graph) mail
+accounts, the provider's own sign-in page for Microsoft (Outlook.com,
 Microsoft 365) and Google accounts (OAuth2 with Thunderbird's registration:
 nothing to register for SG Mail), setup from the e-mail address (ISPDB /
-autoconfig), the calendar (local, CalDAV, Internet calendars; meeting
-invitations), the address book, filters and the offline store. Security
-updates come with Debian's Thunderbird.
+autoconfig, Exchange Autodiscover), the calendar (local, CalDAV, Internet
+calendars; meeting invitations), the address book, filters and the offline
+store. Security updates come with the thunderbird package.
 
 What SG Mail adds is its window: an extension (`extension/`, id
 `sg-mail@stained-glass-os.org`) that makes Thunderbird's main window SG
@@ -54,13 +59,21 @@ profile is not touched), laying the extension and SG Mail's settings
 (`launcher/user.js`, then an administrator's `/etc/sg-mail/user.js`) into it
 on each start.
 
-Account setup is Thunderbird's own (File > Add Account). Microsoft
-accounts: Thunderbird signs in to Outlook.com and Microsoft 365 mail with
-OAuth2 on Microsoft's own login page; some work or school tenants require
-their administrator to approve Thunderbird once (Microsoft's "admin
-consent"), as for any Thunderbird user. Calendars of Microsoft accounts are
-not reachable by Thunderbird 140 (no Exchange calendar in it): subscribe to
-the calendar's published .ics link, or use CalDAV providers.
+Account setup is Thunderbird's own (File > Add Account): on Thunderbird 145
+and later its Account Hub, a dialog over SG Mail's window; on 140 its setup
+tab. Microsoft accounts: type the address; the Account Hub finds Microsoft
+365 and Exchange servers (Autodiscover) and offers Microsoft Graph (Microsoft
+365) or Exchange Web Services (Exchange servers) besides IMAP, and signs in
+with OAuth2 on Microsoft's own login page. Some work or school tenants
+require their administrator to approve Thunderbird once (Microsoft's "admin
+consent"), as for any Thunderbird user.
+
+Calendars of Microsoft accounts: no Thunderbird release synchronises them
+yet (Mozilla is writing Microsoft Graph calendar support; Thunderbird 157
+carries an early, read-only version behind the `calendar.graph.enabled`
+preference, off). Until it ships, subscribe to the calendar's published .ics
+link (Add Network Calendar), or use CalDAV providers. When Mozilla ships it,
+the thunderbird package brings it with the next release.
 
 ## Building and testing
 
@@ -70,6 +83,9 @@ the calendar's published .ics link, or use CalDAV providers.
     make root            # the test root (once): Debian trixie with Thunderbird,
                          # Xvfb, Dovecot, Radicale, aiosmtpd (rootless mmdebstrap)
     make test            # every gate
+    make test TB_DEB=../thunderbird_157.0.1-sg1_amd64.deb
+                         # every gate on that thunderbird package, over
+                         # Debian's, in a root of its own
     make test-mutation   # every gate against its mutants (test/mutants.json)
 
 The gates (`test/gate/*-gate.py`) run Thunderbird headless (Xvfb) in the test
@@ -82,4 +98,4 @@ channel that exists only under a gate (`SG_MAIL_TEST_OUT`).
 ## License
 
 AGPL-3.0-or-later (see LICENSE). Thunderbird is Mozilla's, MPL-2.0, and is
-used as Debian ships it.
+used as Mozilla builds it.

@@ -1,3 +1,22 @@
+sg-mail (0.1.0-2) unstable; urgency=medium
+
+  * Runs on Thunderbird 157 (Mozilla's official build, Stained Glass OS's
+    thunderbird package from sg-image's thunderbird/) as on Debian's 140.
+    Thunderbird 145+ sets accounts up in its Account Hub, a dialog over SG
+    Mail's window (File > Add Account, and the first start without an
+    account), which also offers Exchange (EWS) and Microsoft 365 (Microsoft
+    Graph) mail accounts found by Autodiscover. Microsoft calendars: no
+    Thunderbird release syncs them yet (README).
+  * Gates: `make test TB_DEB=thunderbird_*.deb` runs every gate on that
+    thunderbird package put over Debian's, in a root of its own (sg-image's
+    release runs them on each new Thunderbird before taking it). look-gate
+    follows whichever account setup comes up (the hub: autoconfig, account
+    made, folder pane; Exchange and Graph offered; closing a tool tab comes
+    back to SG Mail). All gates pass on 157 and look-gate on 140; the
+    mutants on 157.
+
+ -- Stained Glass OS <dev@stained-glass.example>  Mon, 05 Oct 2026 23:30:00 +0000
+
 sg-mail (0.1.0-1) unstable; urgency=medium
 
   * First package: SG Mail, Stained Glass OS's mail and calendar, built on
