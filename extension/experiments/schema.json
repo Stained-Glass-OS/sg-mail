@@ -341,6 +341,11 @@
       "name": "sendReply",
       "type": "boolean",
       "optional": true
+     },
+     {
+      "name": "calendarId",
+      "type": "any",
+      "optional": true
      }
     ]
    },

@@ -115,6 +115,7 @@ try:
     env.ui("click", selector=".modal .fp-row .fp-name", text="Projects")
     env.ui("button", label="OK")
     g.check(wait(lambda: in_box("Message Six", "Projects"), 30), "Move to Folder moves it to Projects on the server")
+    g.check(wait(lambda: not in_box("Message Six", "INBOX"), 30), "and out of the Inbox there")
 
     # junk
     env.ui("selectMessage", subject="Message Two")

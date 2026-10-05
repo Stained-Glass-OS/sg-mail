@@ -91,8 +91,8 @@
   "name": "actions-quit",
   "gate": "actions-gate.py",
   "file": "experiments/parent.js",
-  "find": "              key.setAttribute(\"disabled\", \"true\");",
-  "replace": "",
+  "find": "          for (const id of [\"key_quitApplication\"]) {",
+  "replace": "          for (const id of []) {",
   "why": "Ctrl+Q quitting"
  },
  {
@@ -155,8 +155,8 @@
   "name": "calendar-reminder",
   "gate": "calendar-gate.py",
   "file": "ui/js/calendar.js",
-  "find": "      if (at <= now && at > this.reminderSince - 5 * 60000 && ev.end > now) this.onAlarm(ev);",
-  "replace": "",
+  "find": "  onAlarm(ev) {\n    const key",
+  "replace": "  onAlarm(ev) {\n    return;\n    const key",
   "why": "no reminders"
  },
  {
@@ -230,5 +230,13 @@
   "find": "            if (tabmail.currentTabInfo?.mode?.name === \"mail3PaneTab\" && tabmail.tabInfo.includes(nativeTab)) {",
   "replace": "            if (false) {",
   "why": "Thunderbird's own view after a tool tab closes"
+ },
+ {
+  "name": "invite-calendar-choice",
+  "gate": "invite-gate.py",
+  "file": "experiments/parent.js",
+  "find": "          if (chosen) {\n            itip.promptCalendar",
+  "replace": "          if (false) {\n            itip.promptCalendar",
+  "why": "Thunderbird's calendar dialog stopping the answer"
  }
 ]

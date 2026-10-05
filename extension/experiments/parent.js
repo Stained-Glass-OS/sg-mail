@@ -775,7 +775,16 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
           if (buttons.has("imipUpdateButton")) actions.push("update");
           if (buttons.has("imipDeleteButton")) actions.push("delete");
           if (buttons.has("imipReconfirmButton")) actions.push("reconfirm");
+          // the calendars it could go in (Thunderbird would ask with a dialog
+          // of its own; SG Mail's reading pane offers the choice instead)
+          const itip = lazy.cal.itip;
+          let cals = lazy.cal.manager.getCalendars().filter(c => itip.isSchedulingCalendar(c) && !c.getProperty("disabled") && !c.readOnly);
+          const matching = ev ? cals.filter(c => itip.getInvitedAttendee(ev, c) != null) : [];
+          if (matching.length) cals = matching;
+          // network calendars first: the account's own, rather than this computer's
+          cals.sort((a, b) => (a.type === "storage") - (b.type === "storage"));
           return {
+            calendars: cals.map(c => ({ id: c.id, name: c.name, color: c.getProperty("color") || "" })),
             method: state.itipItem.receivedMethod,
             label: data.label || "",
             actions,
@@ -865,13 +874,23 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
           return true;
         },
 
-        async itipRespond(messageId, action, sendReply = true) {
+        async itipRespond(messageId, action, sendReply = true, calendarId = null) {
           const state = itipStates.get(messageId);
           if (!state) throw new ExtensionError("The invitation is not loaded");
           const partstats = { accept: "ACCEPTED", tentative: "TENTATIVE", decline: "DECLINED", add: "", update: "", delete: "", reconfirm: "" };
           if (!(action in partstats)) throw new ExtensionError(`No action ${action}`);
           const win = mainWindow();
           let label = "";
+          // the calendar the reading pane chose, instead of Thunderbird's dialog
+          const itip = lazy.cal.itip;
+          const prompt = itip.promptCalendar;
+          const chosen = calendarId ? lazy.cal.manager.getCalendarById(calendarId) : null;
+          if (chosen) {
+            itip.promptCalendar = (method, item) => {
+              item.targetCalendar = chosen;
+              return true;
+            };
+          }
           const ok = await new Promise(resolve => {
             const done = lazy.cal.itip.executeAction(win, partstats[action], sendReply ? "AUTO" : "NONE", state.actionFunc,
               state.itipItem, state.foundItems, (r) => {
@@ -882,6 +901,8 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
               });
             if (!done) resolve(false);
             setTimeout(() => resolve(done), 15000);
+          }).finally(() => {
+            itip.promptCalendar = prompt;
           });
           return { ok, label };
         },

@@ -1,7 +1,9 @@
 """Gate: a meeting request received. Bob invites Alice (an iCalendar
 REQUEST by mail): SG Mail's reading pane shows the meeting's time and place
 with Accept, Tentative and Decline; Accept puts it in her calendar and
-sends Bob the answer (an iCalendar REPLY, PARTSTAT=ACCEPTED). A second
+sends Bob the answer (an iCalendar REPLY, PARTSTAT=ACCEPTED). With two calendars it
+could go in, the reading pane offers the choice (the account's first)
+instead of Thunderbird's dialog. A second
 invitation declined: Bob gets PARTSTAT=DECLINED.
 
 Mutants (test/mutants.json): invite-*.
@@ -64,12 +66,27 @@ try:
     env.ui("click", selector="#nav-calendar")
     env.wait_ui("calendar", lambda r: any(c["name"] == "Work" for c in r["calendars"]), timeout=60)
     env.ui("click", selector="#nav-mail")
+    # a second calendar it could go in (this computer's): Thunderbird would
+    # stop to ask in a dialog; SG Mail's reading pane offers the choice
+    env.chrome("""
+      const { cal } = ChromeUtils.importESModule("resource:///modules/calendar/calUtils.sys.mjs");
+      if (!cal.manager.getCalendars().some(c => c.type == "storage" && !c.getProperty("disabled"))) {
+        const c = cal.manager.createCalendar("storage", Services.io.newURI("moz-storage-calendar://"));
+        c.name = "Calendar"; c.setProperty("imip.identity.key", "id1"); cal.manager.registerCalendar(c);
+      }
+      return true;""")
 
     env.ui("selectMessage", subject="Invitation: Budget planning")
-    d = env.wait_ui("mail", lambda r: r["reader"].get("invite") is not None, timeout=40)
+    try:
+        d = env.wait_ui("mail", lambda r: r["reader"].get("invite") is not None, timeout=40)
+    except TimeoutError as e:
+        g.check(False, "the reading pane shows the meeting request", str(e)[-300:])
+        raise
     inv = d["reader"]["invite"]
     g.check(inv["method"] == "REQUEST", "the reading pane knows it for a meeting request", inv)
     g.check(all(a in inv["actions"] for a in ("accept", "tentative", "decline")), "with Accept, Tentative and Decline", inv["actions"])
+    choice = env.ui("text", selector="#invite-calendar option")
+    g.check(choice[:1] == ["Work"] and "Calendar" in choice, "two calendars: the reading pane offers both, the account's first", choice)
     shown = env.ui("text", selector="#rp-invite")
     g.check(shown and "Room 4" in shown[0], "it shows where the meeting is", shown)
     env.ui("click", selector="#invite-accept")

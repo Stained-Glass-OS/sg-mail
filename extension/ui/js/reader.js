@@ -235,6 +235,12 @@ export class ReadingPane {
       if (ev.location) text.append(h("div", { class: "where", html: `${icon("location", 12)} ${esc(ev.location)}` }));
     }
     text.append(h("div", { class: "label", text: info.label || "" }));
+    // more than one calendar it could go in: which, here (the first is the account's)
+    let calSel = null;
+    if ((info.calendars || []).length > 1 && info.actions.some(a => ["accept", "tentative", "add"].includes(a))) {
+      calSel = h("select", { id: "invite-calendar", title: "Calendar" }, info.calendars.map(c => h("option", { value: c.id, text: c.name })));
+      text.append(h("div", { class: "where", style: "margin-top:6px" }, "Calendar: ", calSel));
+    }
     const acts = h("div", { class: "acts" });
     const labels = { accept: ["accept", "Accept"], tentative: ["tentative", "Tentative"], decline: ["decline", "Decline"],
       add: ["calendar", "Add to Calendar"], update: ["sync", "Update"], delete: ["delete", "Remove from Calendar"], reconfirm: ["sync", "Reconfirm"] };
@@ -244,7 +250,8 @@ export class ReadingPane {
       b.addEventListener("click", async () => {
         for (const x of acts.querySelectorAll("button")) x.disabled = true;
         try {
-          const r = await messenger.sgmail.itipRespond(msgId, a, true);
+          const calendarId = calSel ? calSel.value : ((info.calendars || [])[0] || {}).id || null;
+          const r = await messenger.sgmail.itipRespond(msgId, a, true, calendarId);
           toast(r.label || (r.ok ? "Done" : "Nothing changed"));
         } catch (e) {
           toast("The response could not be sent: " + e.message);
