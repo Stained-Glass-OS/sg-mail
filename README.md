@@ -10,6 +10,12 @@ Ctrl+Shift+R, Ctrl+F forward, Ctrl+E search, Ctrl+Q / Ctrl+U read/unread,
 Insert flag, Delete, Backspace archive, Ctrl+Shift+V move, F9 Send/Receive,
 Ctrl+1 / Ctrl+2 Mail / Calendar, Ctrl+Alt+1..4 calendar views).
 
+![SG Mail, light](docs/screenshots/sg-mail-light.png)
+![SG Mail's calendar, dark](docs/screenshots/sg-mail-calendar-dark.png)
+
+(More in docs/screenshots: the message window, light and dark. The look
+gate takes them against the test servers.)
+
 ## Thunderbird underneath
 
 SG Mail is built on **Mozilla Thunderbird** (Debian's `thunderbird` package,
