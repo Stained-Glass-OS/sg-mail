@@ -91,8 +91,16 @@ const COMMANDS = {
   style: a => getComputedStyle(find(a.selector, a))[a.prop],
 };
 
+const seenKeys = [];
+
 export function installTestHook(name, api = {}) {
   if (!messenger.sgmail || !messenger.sgmail.onTestRun) return;
+  // the keys the page saw (a gate's real keystrokes reach it or not)
+  document.addEventListener("keydown", e => {
+    seenKeys.push(`${e.ctrlKey ? "Ctrl+" : ""}${e.shiftKey ? "Shift+" : ""}${e.altKey ? "Alt+" : ""}${e.key}`);
+    if (seenKeys.length > 50) seenKeys.shift();
+  }, true);
+  COMMANDS.keys = () => seenKeys.slice();
   messenger.sgmail.onTestRun.addListener(async req => {
     if (req.target !== name && !(req.target === "compose" && name === "compose") ) return;
     if (req.window && req.window !== location.search) return;

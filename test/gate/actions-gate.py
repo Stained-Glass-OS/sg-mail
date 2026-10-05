@@ -77,14 +77,19 @@ try:
     wait(lambda: "\\Seen" in (flags("Message Two") or ""), 10)      # read once shown
     env.ui("key", selector="#message-list", key="u", ctrl=True)
     g.check(wait(lambda: "\\Seen" not in (flags("Message Two") or "\\Seen")), "(unread again before the real key)")
+    X = dict(os.environ, DISPLAY=":91")
+    for wid in subprocess.run(["xdotool", "search", "--name", "SG Mail"], env=X, capture_output=True, text=True).stdout.split()[:1]:
+        subprocess.run(["xdotool", "windowfocus", "--sync", wid], env=X, capture_output=True)
+    env.chrome("""const w = Services.wm.getMostRecentWindow("mail:3pane"); w.focus();
+      const t = w.document.getElementById("tabmail").tabInfo.find(t => t.browser && t.browser.currentURI.spec.includes("/ui/main.html"));
+      t.browser.focus(); return true;""")
     env.ui("focus", selector="#message-list")
-    env.chrome("""Services.wm.getMostRecentWindow("mail:3pane").focus(); return true;""")
-    r = subprocess.run(["xdotool", "key", "--clearmodifiers", "ctrl+q"], env=dict(os.environ, DISPLAY=":91"), capture_output=True)
+    r = subprocess.run(["xdotool", "key", "ctrl+q"], env=X, capture_output=True)
     time.sleep(3)
     alive = env.tb.poll() is None
     g.check(alive, "a real Ctrl+Q does not quit SG Mail", r.stderr.decode()[:200])
     if alive:
-        g.check(wait(lambda: "\\Seen" in (flags("Message Two") or ""), 15), "it marks the message read", flags("Message Two"))
+        g.check(wait(lambda: "\\Seen" in (flags("Message Two") or ""), 15), "it marks the message read", (flags("Message Two"), env.ui("keys")))
 
     # flag
     env.ui("selectMessage", subject="Message Three")
