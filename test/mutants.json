@@ -966,5 +966,13 @@
   "find": " || (origin && c.uri?.spec.startsWith(origin))",
   "replace": "",
   "why": "a colleague's calendar opened through a removed account's gateway kept"
+ },
+ {
+  "name": "davmail-mail-no-consent-hint",
+  "gate": "davmail-mail-gate.py",
+  "file": "ui/js/microsoft.js",
+  "find": "'<p class=\"ms-consent\" style=\"color:var(--muted)\">If Microsoft says <i>Approval required</i>, your organisation\\'s administrator ' +",
+  "replace": "'<p>' +",
+  "why": "no word on Microsoft's admin approval (the real test tenant's case)"
  }
 ]

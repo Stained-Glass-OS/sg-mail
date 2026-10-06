@@ -208,6 +208,12 @@ accounts, on Debian's Thunderbird 140 as on 157.
   gateway). SG Mail never sees a Microsoft password or token, and has no
   sign-in code of its own. `/usr/bin/sg-mail` starts the gateways; they
   stop with the session.
+- **Organisations that approve apps themselves**: many Microsoft 365
+  tenants let only administrators consent to an app. Microsoft then shows
+  "Approval required" in DavMail's window; an administrator has to allow
+  DavMail (application ID `facd6cff-a294-4415-b59f-c5b01937d7bd`, DavMail's
+  own registration) once in Microsoft Entra (Enterprise applications, or
+  the admin consent link) before the account can be connected.
 - **When something is wrong** the Calendar's side pane says so, per
   account: the gateway is not running (Start), DavMail has no valid sign-in
   ("Sign in again": DavMail's window again), Microsoft cannot be reached.

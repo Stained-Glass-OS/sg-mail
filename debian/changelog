@@ -1,3 +1,16 @@
+sg-mail (0.1.0-7) unstable; urgency=medium
+
+  * Microsoft accounts: the sign-in's waiting box says what to do when
+    Microsoft answers "Approval required" -- a work or school organisation
+    that lets only its administrators approve apps must allow DavMail
+    (application ID facd6cff-a294-4415-b59f-c5b01937d7bd) once in Microsoft
+    Entra. Found with a real Microsoft 365 test account in a QA VM: the
+    password was accepted in DavMail's window, then the tenant asked for
+    admin approval; Cancel left nothing behind. Gate: davmail-mail (mutant
+    davmail-mail-no-consent-hint).
+
+ -- Stained Glass OS <dev@stained-glass.example>  Tue, 06 Oct 2026 21:00:00 +0000
+
 sg-mail (0.1.0-6) unstable; urgency=medium
 
   * Microsoft accounts through DavMail (sg-davmail, a new dependency):

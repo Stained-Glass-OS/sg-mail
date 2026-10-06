@@ -92,6 +92,9 @@ try:
     g.check(any("mail, calendar and contacts" in b and "one sign-in" in b for b in body), "with one Microsoft sign-in, in DavMail's window", body)
     env.ui("button", label="Connect")
     env.wait_ui("count", lambda n: n > 0, selector=".ms-waiting", timeout=20)
+    hint = env.ui("text", selector=".ms-waiting .ms-consent")
+    g.check(hint and "Approval required" in hint[0] and "facd6cff-a294-4415-b59f-c5b01937d7bd" in hint[0],
+            "the waiting box says what to do when the organisation must approve DavMail (its application ID)", hint)
     win = wait(lambda: env.x_windows("DavMail stand-in sign-in"), 60)
     g.check(bool(win), "DavMail's sign-in window opens", requests_log()[-400:])
     open(os.path.join(gw_dir(), "signin.approve"), "w").close()

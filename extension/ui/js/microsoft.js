@@ -196,7 +196,11 @@ export class MicrosoftCalendars {
     });
     box.append(h("div", { class: "modal-title", text: "Signing in to Microsoft" }),
       h("div", { class: "modal-body", html: `<p>Microsoft's sign-in window is opening (DavMail). Sign in there as <b>${esc(email)}</b>.</p>` +
-        "<p>This box closes by itself when you have signed in.</p>" }),
+        "<p>This box closes by itself when you have signed in.</p>" +
+        // work and school accounts whose organisation lets only its
+        // administrators approve apps (Microsoft's "Approval required" page)
+        '<p class="ms-consent" style="color:var(--muted)">If Microsoft says <i>Approval required</i>, your organisation\'s administrator ' +
+        "has to allow DavMail (application ID facd6cff-a294-4415-b59f-c5b01937d7bd) once in Microsoft Entra; until then, Cancel here.</p>" }),
       h("div", { class: "modal-buttons" }, cancel));
     shade.append(box);
     document.body.append(shade);
