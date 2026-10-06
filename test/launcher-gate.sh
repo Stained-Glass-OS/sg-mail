@@ -25,6 +25,7 @@ no-class|--name sg-mail --class sg-mail|
 no-userchrome|cp "$SHARE/userChrome.css"|: cp "$SHARE/userChrome.css"
 no-fractional-compat|export GDK_SG_FRACTIONAL=0|: export GDK_SG_FRACTIONAL=0
 no-davmail-start|"$DAVMAIL_HELPER" start-all|: "$DAVMAIL_HELPER" start-all
+no-wait-ending|while kill -0 "$lockpid"|while false \&\& kill -0 "$lockpid"
 M
     rm -rf "$W"; [ $rc = 0 ] && echo "RESULT: PASS" || echo "RESULT: FAIL"; exit $rc
 fi
@@ -74,5 +75,19 @@ run "mailto:bob@example.test?subject=Hi"
 [ ! -e "$P/addonStartup.json.lz4" ] && pass "and Thunderbird's add-on cache is dropped so it loads the new one" || fail "the add-on cache stays"
 grep -qx -- "mailto:bob@example.test?subject=Hi" "$W/args" && pass "a mailto: link is passed on" || fail "mailto: lost"
 [ "$(stat -c %a "$P")" = 700 ] && pass "the profile is private (0700)" || fail "profile mode $(stat -c %a "$P")"
+# a Thunderbird still ending (holding the lock, no window): the new one waits
+# for it; one still running (a window): handed the request at once
+sleep 30 & OLD=$!
+ln -sfn "127.0.1.1:+$OLD" "$P/lock"
+printf '#!/bin/sh\n[ -f "%s/haswindow" ] && echo 12345\nexit 0\n' "$W" > "$W/xdotool"; chmod +x "$W/xdotool"
+( sleep 2; kill "$OLD" ) &
+t0=$(date +%s%3N); SG_MAIL_XDOTOOL="$W/xdotool" run; t1=$(date +%s%3N)
+waited=$((t1 - t0))
+[ "$waited" -ge 1500 ] && pass "a Thunderbird still ending is waited for (${waited} ms), not met with 'not responding'" || fail "did not wait for the ending Thunderbird (${waited} ms)"
+sleep 30 & OLD=$!
+ln -sfn "127.0.1.1:+$OLD" "$P/lock"; touch "$W/haswindow"
+t0=$(date +%s%3N); SG_MAIL_XDOTOOL="$W/xdotool" run; t1=$(date +%s%3N); kill "$OLD" 2>/dev/null
+waited=$((t1 - t0))
+[ "$waited" -lt 1000 ] && pass "a running one (it has a window) is handed the request at once" || fail "waited for a running Thunderbird (${waited} ms)"
 [ "$RC" = 0 ] && echo "RESULT: PASS" || echo "RESULT: FAIL"
 exit "$RC"

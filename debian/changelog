@@ -1,3 +1,15 @@
+sg-mail (0.1.0-8) unstable; urgency=medium
+
+  * SG Mail started again while the last one is still ending (Ctrl+Q,
+    then SG Mail from Start at once) waits for it instead of Thunderbird's
+    "already running, but is not responding" (s14 regression walk
+    2026-10-06): the launcher reads the profile lock's process, and one
+    with no window left is waited for (15 s at most); one with a window is
+    running and gets the request as before. Gate: test/launcher-gate.sh
+    (mutant no-wait-ending).
+
+ -- Stained Glass OS <ke7oxh@gmail.com>  Tue, 06 Oct 2026 11:01:03 -0700
+
 sg-mail (0.1.0-7) unstable; urgency=medium
 
   * Microsoft accounts: the sign-in's waiting box says what to do when

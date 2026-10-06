@@ -68,4 +68,18 @@ done
 # click landed 1/7 further right and lower than the pointer (regression walk
 # 2026-10-06). GDK_SG_FRACTIONAL=0 says what it is.
 export GDK_SG_FRACTIONAL=0
+# A Thunderbird still ending holds the profile's lock: started again in those
+# seconds (File > Exit or Ctrl+Q, then SG Mail from Start at once) it said
+# "Thunderbird is already running, but is not responding" (regression walk
+# 2026-10-06). The lock names its process; one with no window left is
+# ending: wait for it (15 s at most). One with a window is running, and gets
+# this start's request (Thunderbird's remote service).
+lockpid=$(readlink "$PROFILE/lock" 2>/dev/null | sed -n 's/.*:+\{0,1\}\([0-9][0-9]*\)$/\1/p')
+if [ -n "$lockpid" ] && kill -0 "$lockpid" 2>/dev/null; then
+    XDT=${SG_MAIL_XDOTOOL:-xdotool}
+    if command -v "$XDT" >/dev/null 2>&1 && [ -n "${DISPLAY:-}" ] && [ -z "$("$XDT" search --onlyvisible --pid "$lockpid" 2>/dev/null)" ]; then
+        i=0
+        while kill -0 "$lockpid" 2>/dev/null && [ $i -lt 150 ]; do sleep 0.1; i=$((i + 1)); done
+    fi
+fi
 exec "$TB" --name sg-mail --class sg-mail --profile "$PROFILE" "$@"
