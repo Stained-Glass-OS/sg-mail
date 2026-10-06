@@ -391,6 +391,76 @@
     "type": "function",
     "async": true,
     "parameters": []
+   },
+   {
+    "name": "moveEvent",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "calendarId",
+      "type": "string"
+     },
+     {
+      "name": "id",
+      "type": "string"
+     },
+     {
+      "name": "occurrence",
+      "type": "any",
+      "optional": true
+     },
+     {
+      "name": "change",
+      "type": "object",
+      "additionalProperties": {
+       "type": "any"
+      }
+     },
+     {
+      "name": "options",
+      "type": "any",
+      "optional": true
+     }
+    ]
+   },
+   {
+    "name": "focusInfo",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "ids",
+      "type": "array",
+      "items": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "fresh",
+      "type": "boolean",
+      "optional": true
+     }
+    ]
+   },
+   {
+    "name": "createMoveRule",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "folderId",
+      "type": "string"
+     },
+     {
+      "name": "email",
+      "type": "string"
+     },
+     {
+      "name": "targetFolderId",
+      "type": "string"
+     }
+    ]
    }
   ],
   "events": [

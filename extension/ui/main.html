@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <!--
   SG Mail -- the main window: the ribbon, the folder pane (or the calendar's
-  date navigator) with the navigation bar under it, the message list and the
-  reading pane (or the calendar), and the status bar.
+  date navigator, or People's address books) with the navigation bar under
+  it, the message list and the reading pane (or the calendar, or People's
+  contacts and contact card), and the status bar.
 
   Copyright (C) 2026 Stained Glass OS contributors
   SPDX-License-Identifier: AGPL-3.0-or-later
@@ -23,6 +24,7 @@
         <div id="folder-pane" class="folder-pane" role="tree" tabindex="0" aria-label="Folders"></div>
       </div>
       <div id="side-calendar" class="side-panel" hidden></div>
+      <div id="side-people" class="side-panel" hidden></div>
       <nav id="nav-bar" class="nav-bar" aria-label="Navigation"></nav>
     </aside>
     <div class="splitter" data-for="side"></div>
@@ -49,6 +51,7 @@
       <section id="reading-pane" class="reading-pane" aria-label="Reading pane"></section>
     </main>
     <main id="module-calendar" class="module" hidden></main>
+    <main id="module-people" class="module" hidden></main>
   </div>
   <footer id="status-bar" class="status-bar">
     <span id="status-left"></span>

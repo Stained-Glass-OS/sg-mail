@@ -67,6 +67,35 @@ const COMMANDS = {
     el.dispatchEvent(ev);
     return { prevented: ev.defaultPrevented };
   },
+  // a mouse drag: pressed on an element (or an element inside it, a.inner),
+  // moved in steps to another element's point (a.to) or by (dx, dy), let go
+  drag(a) {
+    let el = find(a.selector, a);
+    if (a.inner) el = el.querySelector(a.inner);
+    const at = (e, o) => {
+      const r = e.getBoundingClientRect();
+      return [r.left + (o.px !== undefined ? o.px : r.width * (o.fx ?? 0.5)) + (o.dx || 0),
+        r.top + (o.py !== undefined ? o.py : r.height * (o.fy ?? 0.5)) + (o.dy || 0)];
+    };
+    const [x0, y0] = at(el, { fx: a.fx, fy: a.fy, px: a.px, py: a.py });
+    const [x1, y1] = a.to ? at(find(a.to.selector, a.to), a.to) : [x0 + (a.dx || 0), y0 + (a.dy || 0)];
+    const fire = (target, type, x, y) => target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window, button: 0, buttons: type === "mouseup" ? 0 : 1, clientX: x, clientY: y }));
+    fire(el, "mousedown", x0, y0);
+    const steps = a.steps || 6;
+    for (let i = 1; i <= steps; i++) fire(document, "mousemove", x0 + (x1 - x0) * i / steps, y0 + (y1 - y0) * i / steps);
+    if (!a.hold) fire(document, "mouseup", x1, y1);
+    return { from: [x0, y0], to: [x1, y1] };
+  },
+  // where an element's point is on the screen (for real pointer input)
+  screenPoint(a) {
+    let el = find(a.selector, a);
+    if (a.inner) el = el.querySelector(a.inner);
+    el.scrollIntoView?.({ block: "nearest" });
+    const r = el.getBoundingClientRect();
+    const s = window.devicePixelRatio || 1;
+    return { x: Math.round((window.mozInnerScreenX + r.left + (a.px !== undefined ? a.px : r.width * (a.fx ?? 0.5))) * s),
+      y: Math.round((window.mozInnerScreenY + r.top + (a.py !== undefined ? a.py : r.height * (a.fy ?? 0.5))) * s) };
+  },
   focus(a) {
     find(a.selector, a).focus();
     return true;
@@ -89,6 +118,12 @@ const COMMANDS = {
   attr: a => find(a.selector, a).getAttribute(a.name),
   html: a => find(a.selector, a).innerHTML,
   style: a => getComputedStyle(find(a.selector, a))[a.prop],
+  rect(a) {
+    const el = document.querySelectorAll(a.selector)[a.index || 0];
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height, shown: r.width > 0 && r.height > 0 };
+  },
 };
 
 const seenKeys = [];

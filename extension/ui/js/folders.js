@@ -54,6 +54,11 @@ export class FolderPane {
     this.info = new Map();          // id -> {unread, total}
     this.collapsed = new Set();
     this.selectedId = null;
+    // Outlook's Search Folders: messages found across the mailboxes
+    this.virtuals = new Map([
+      ["search:unread", { id: "search:unread", name: "Unread Mail", virtual: "unread", specialUse: [], icon: "search-folder" }],
+      ["search:flagged", { id: "search:flagged", name: "For Follow Up", virtual: "flagged", specialUse: [], icon: "flag" }],
+    ]);
     this.refreshSoon = debounce(() => this.refresh(), 250);
     el.addEventListener("keydown", e => this.onKey(e));
     messenger.folders.onFolderInfoChanged.addListener((folder, info) => {
@@ -124,6 +129,7 @@ export class FolderPane {
       }
     }));
     this.render();
+    this.onRefreshed && this.onRefreshed();
   }
 
   inbox(accountId) {
@@ -165,6 +171,11 @@ export class FolderPane {
         const outbox = [...this.folders.values()].find(f => f.accountId === this.local.id && roleOf(f) === "outbox");
         if (outbox && (this.info.get(outbox.id)?.total || 0) > 0) frag.append(this.row(outbox, 0));
       }
+    }
+    if (this.accounts.length) {
+      const key = "section:search";
+      frag.append(this.section(key, "Search Folders"));
+      if (!this.collapsed.has(key)) for (const v of this.virtuals.values()) frag.append(this.virtualRow(v));
     }
     if (this.local) {
       const own = (this.local.rootFolder.subFolders || []).filter(f => !["outbox"].includes(roleOf(f)));
@@ -264,6 +275,28 @@ export class FolderPane {
     return el;
   }
 
+  virtualRow(v) {
+    const el = h("div", { class: "fp-row", role: "treeitem", "data-id": v.id, style: "padding-left:12px", title: v.name,
+      html: `<span class="twisty"></span><span class="fp-icon">${icon(v.icon, 16)}</span><span class="fp-name">${esc(v.name)}</span><span class="fp-count"></span>` });
+    el.addEventListener("click", () => this.select(v.id));
+    this.paintVirtual(el, v);
+    return el;
+  }
+
+  // Unread Mail counts the unread messages of the mail folders (not
+  // Deleted Items, Junk, Sent, Drafts or Outbox)
+  paintVirtual(el, v) {
+    if (v.virtual !== "unread") return;
+    let n = 0;
+    for (const [id, info] of this.info) {
+      const f = this.folders.get(id);
+      if (f && !["trash", "junk", "sent", "drafts", "outbox", "templates"].includes(roleOf(f))) n += info.unread || 0;
+    }
+    const c = el.querySelector(".fp-count");
+    c.textContent = n ? String(n) : "";
+    el.classList.toggle("has-unread", n > 0);
+  }
+
   paintCountsOf(el, f, info, role) {
     const c = el.querySelector(".fp-count");
     const unread = info.unread || 0;
@@ -283,6 +316,8 @@ export class FolderPane {
   paintCounts(id) {
     const f = this.folders.get(id);
     if (!f) return;
+    const unread = this.el.querySelector('.fp-row[data-id="search:unread"]');
+    if (unread) this.paintVirtual(unread, this.virtuals.get("search:unread"));
     for (const el of this.el.querySelectorAll(`.fp-row[data-id="${CSS.escape(id)}"]`)) this.paintCountsOf(el, f, this.info.get(id) || {}, roleOf(f));
     if (roleOf(f) === "outbox") this.refreshSoon();
   }
@@ -299,10 +334,10 @@ export class FolderPane {
   }
 
   select(id, { silent = false } = {}) {
-    if (!this.folders.has(id)) return;
+    if (!this.folders.has(id) && !this.virtuals.has(id)) return;
     this.selectedId = id;
     this.markSelected();
-    if (!silent) this.onSelect(this.folders.get(id));
+    if (!silent) this.onSelect(this.folders.get(id) || this.virtuals.get(id));
   }
 
   markSelected() {

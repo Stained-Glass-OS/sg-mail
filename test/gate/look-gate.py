@@ -9,8 +9,8 @@ here a local stand-in) and makes the account, which SG Mail's folder pane
 then shows; Thunderbird knows how to sign in to
 Microsoft (Outlook.com, Microsoft 365) and Google mail with their own login
 pages (OAuth2 with Mozilla's registration: nothing to register for SG Mail).
-Screenshots of the main window, the calendar and the message window, light
-and dark, are left in the gate's directory.
+Screenshots of the main window, the calendar, People and the message
+window, light and dark, are left in the gate's directory.
 
 Mutants (test/mutants.json): look-*.
 
@@ -69,6 +69,10 @@ def seed(env):
     for frm, subj, text, hours, seen, att in msgs:
         t = now - hours * 3600
         env.append("INBOX", message(frm, "Alice Example <alice@example.test>", subj, text=text, date=t, attachments=att), seen=seen, flagged=subj.startswith("Invoice"), date=t)
+    # a newsletter: the Focused Inbox's Other tab
+    t = now - 2 * 3600
+    env.append("INBOX", message("Contoso News <news@contoso.test>", "alice@example.test", "This week at Contoso", text="Our news.", date=t,
+                                extra_headers=[("List-Unsubscribe", "<mailto:leave@contoso.test>")]), date=t)
     env.append("Projects", message("Lee Gu <lee@example.test>", "alice@example.test", "Kite plans", text="x"), seen=True)
 
 
@@ -85,6 +89,19 @@ def shots(env, tag):
     env.wait_ui("calendar", lambda r: len(r["events"]) >= 3, timeout=60)
     time.sleep(1)
     env.screenshot(os.path.join(SHOTS, f"sg-mail-calendar-{tag}.png"))
+    # People: the address book in SG Mail's window
+    env.chrome("""
+      const { MailServices } = ChromeUtils.importESModule("resource:///modules/MailServices.sys.mjs");
+      const { VCardUtils } = ChromeUtils.importESModule("resource:///modules/VCardUtils.sys.mjs");
+      const dir = MailServices.ab.getDirectory("jsaddrbook://abook.sqlite");
+      for (const v of args) dir.addCard(VCardUtils.vCardToAbCard(v));
+      return true;""", [f"BEGIN:VCARD\r\nVERSION:4.0\r\nFN:{fn}\r\nN:{fn.split()[1]};{fn.split()[0]};;;\r\nEMAIL;PREF=1:{em}\r\n"
+                        f"TEL;TYPE=cell:{tel}\r\nORG:{org}\r\nTITLE:{title}\r\nEND:VCARD\r\n" for fn, em, tel, org, title in PEOPLE])
+    env.ui("click", selector="#nav-people")
+    env.wait_ui("people", lambda r: len(r["list"]) >= len(PEOPLE), timeout=30)
+    env.ui("click", selector=".pp-row", text="Megan Bowen")
+    time.sleep(1)
+    env.screenshot(os.path.join(SHOTS, f"sg-mail-people-{tag}.png"))
     env.ui("click", selector="#nav-mail")
     env.ui("selectMessage", subject="Lunch on Friday?")
     env.ui("key", selector="#message-list", key="r", ctrl=True)
@@ -108,6 +125,11 @@ def shots(env, tag):
         pass
     return bg
 
+
+PEOPLE = [("Megan Bowen", "megan@example.test", "+1 555 0100", "Contoso", "Marketing Manager"),
+          ("Lee Gu", "lee@example.test", "+1 555 0101", "Contoso", "Director"),
+          ("Isaiah Langer", "isaiah@example.test", "+1 555 0102", "Fabrikam", "Sales Representative"),
+          ("Joni Sherman", "joni@example.test", "+1 555 0103", "Contoso", "Paralegal")]
 
 EVENTS = [("Team standup", 9, 9.5), ("Design review", 11, 12), ("Lunch with Lee", 12.5, 13.5), ("Customer call", 15, 16)]
 

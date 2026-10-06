@@ -14,9 +14,11 @@ Recommends: fonts-inter
 Description: SG Mail: mail and calendar for Stained Glass OS (built on Thunderbird)
  SG Mail is Stained Glass OS's mail and calendar program, in a window
  arranged the way many office workers know: a ribbon, the folder pane with
- Favorites and unread counts, the message list grouped by date, the reading
- pane, a message window, and a calendar with Day, Work Week, Week and Month
- views, meeting invitations and reminders.
+ Favorites, unread counts and Search Folders, the message list grouped by
+ date with a Focused Inbox, the reading pane (right, bottom or off), a
+ message window, a calendar with Day, Work Week, Week and Month views
+ (appointments dragged and resized with the mouse), meeting invitations and
+ reminders, and People (contacts and contact groups).
  .
  It is built on Mozilla Thunderbird (unmodified: Stained Glass OS's
  package of Mozilla's official build, or Debian's), which does the work

@@ -13,6 +13,7 @@ import { h, esc, dateGroup, listTime, displayName, debounce } from "./util.js";
 
 const GROUP_H = 28;
 const ROW_H = 68;
+const COMPACT_H = 30;           // one line a message (the reading pane at the bottom, or off)
 
 export class MessageList {
   constructor(el, { onSelect, onOpen, onContext, onFlag, onDragStart }) {
@@ -59,6 +60,7 @@ export class MessageList {
 
   visibleMessages() {
     let list = this.messages;
+    if (this.focusFilter) list = list.filter(this.focusFilter);
     if (this.filter === "unread") list = list.filter(m => !m.read || this.selected.has(m.id));
     else if (this.filter === "flagged") list = list.filter(m => m.flagged);
     const dir = this.sort.desc ? -1 : 1;
@@ -97,9 +99,10 @@ export class MessageList {
       }
       if (groupRow) groupRow.count++;
       if (g && this.collapsed.has(g.key)) continue;
-      rows.push({ type: "msg", msg: m, top, height: ROW_H });
+      const rh = this.compact ? COMPACT_H : ROW_H;
+      rows.push({ type: "msg", msg: m, top, height: rh });
       this.order.push(m.id);
-      top += ROW_H;
+      top += rh;
     }
     this.rows = rows;
     this.total = top;
@@ -116,6 +119,15 @@ export class MessageList {
       }
       e.textContent = this.loading ? "Loading…" : this.emptyText;
     } else if (e) e.remove();
+  }
+
+  setCompact(on) {
+    if (!!this.compact === !!on) return;
+    this.compact = !!on;
+    this.el.classList.toggle("compact", this.compact);
+    this.layout();
+    this.draw(true);
+    if (this.focusId !== null) this.scrollTo(this.focusId);
   }
 
   setLoading(on) {
@@ -188,8 +200,16 @@ export class MessageList {
     if (x.forwarded) marks.push(icon("forward", 15));
     if (x.attachment) marks.push(icon("attach", 15));
     if (x.priority >= 5) marks.push(icon("importance-high", 15));
-    el.innerHTML =
-      `<div class="ml-line"><span class="ml-from">${esc(from)}</span><span class="ml-icons">${marks.join("")}</span>` +
+    const cats = (m.tags || []).map(t => this.tagColor && this.tagColor(t)).filter(Boolean)
+      .map(c => `<span class="ml-cat" style="background:${esc(c)}"></span>`).join("");
+    if (this.compact) {
+      el.classList.add("compact");
+      el.innerHTML =
+        `<div class="ml-line"><span class="ml-from">${esc(from)}</span><span class="ml-subject">${esc((x.hasRe ? "RE: " : "") + (m.subject || "(no subject)"))}</span>` +
+        `<span class="ml-icons">${cats}${marks.join("")}</span><span class="ml-time">${esc(listTime(m.date))}</span>` +
+        `<button class="ml-flag${m.flagged ? " on" : ""}" title="${m.flagged ? "Clear flag" : "Flag this message"}">${icon(m.flagged ? "flag-filled" : "flag", 15)}</button></div>`;
+    } else el.innerHTML =
+      `<div class="ml-line"><span class="ml-from">${esc(from)}</span><span class="ml-icons">${cats}${marks.join("")}</span>` +
       `<button class="ml-flag${m.flagged ? " on" : ""}" title="${m.flagged ? "Clear flag" : "Flag this message"}">${icon(m.flagged ? "flag-filled" : "flag", 15)}</button></div>` +
       `<div class="ml-line"><span class="ml-subject">${esc((x.hasRe ? "RE: " : "") + (m.subject || "(no subject)"))}</span><span class="ml-time">${esc(listTime(m.date))}</span></div>` +
       `<div class="ml-line ml-preview">${esc(x.preview || "")}</div>`;
@@ -285,8 +305,8 @@ export class MessageList {
     else if (e.key === "ArrowUp") next = Math.max(0, cur - 1);
     else if (e.key === "Home") next = 0;
     else if (e.key === "End") next = this.order.length - 1;
-    else if (e.key === "PageDown") next = Math.min(this.order.length - 1, cur + Math.floor(this.el.clientHeight / ROW_H));
-    else if (e.key === "PageUp") next = Math.max(0, cur - Math.floor(this.el.clientHeight / ROW_H));
+    else if (e.key === "PageDown") next = Math.min(this.order.length - 1, cur + Math.floor(this.el.clientHeight / (this.compact ? COMPACT_H : ROW_H)));
+    else if (e.key === "PageUp") next = Math.max(0, cur - Math.floor(this.el.clientHeight / (this.compact ? COMPACT_H : ROW_H)));
     else if (e.key === "Enter" && this.focusId !== null) {
       this.onOpen(this.byId.get(this.focusId));
       e.preventDefault();

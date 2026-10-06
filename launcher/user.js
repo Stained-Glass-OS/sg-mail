@@ -36,3 +36,6 @@ user_pref("mail.identity.default.reply_on_top", 1);
 user_pref("mailnews.message_display.disable_remote_image", true);
 // launcher/userChrome.css: no glimpse of Thunderbird's own view at start
 user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
+// the Focused Inbox tells bulk mail by these headers: kept in Thunderbird's
+// message database (and fetched with the headers from IMAP servers)
+user_pref("mailnews.customDBHeaders", "list-unsubscribe list-id precedence auto-submitted feedback-id");

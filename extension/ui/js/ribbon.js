@@ -75,7 +75,11 @@ export class Ribbon {
     if (!b) return;
     if ("enabled" in st) b.disabled = !st.enabled;
     if ("toggled" in st) b.classList.toggle("toggled", st.toggled);
-    if ("label" in st) b.querySelector(".rb-label").textContent = st.label;
+    if ("label" in st) b.querySelector(".rb-label").firstChild.textContent = st.label;
+    if ("icon" in st) {
+      const svg = b.querySelector(":scope > svg.icon");
+      if (svg) svg.outerHTML = icon(st.icon, b.classList.contains("large") ? 32 : 16);
+    }
   }
 
   set(id, st) {

@@ -3,7 +3,7 @@
 (Insert), Delete (to Deleted Items), Archive (Backspace), Move to another
 folder (Ctrl+Shift+V's folder dialog), Junk, each reaching the IMAP server;
 a message delivered while SG Mail runs appears in the Inbox, with a desktop
-notification; Send/Receive (F9).
+notification; Send/Receive (F9), which ends without an error.
 
 Mutants (test/mutants.json): actions-*.
 
@@ -135,6 +135,8 @@ try:
     note = [n for n in d["notifications"] if n["kind"] == "mail" and n["message"] == "Fresh news"]
     g.check(bool(note) and note[0]["title"] == "Bob Builder", "a desktop notification names the sender and subject", d["notifications"])
     g.check(any(x.get("subject") == "Fresh news" and x["unread"] for x in d["list"]), "unread")
+    st = env.wait_ui("text", lambda t: t and t[0] != "Send/Receive…", selector="#status-right", timeout=60)
+    g.check(st == ["All folders are up to date."], "Send/Receive ends without an error (no Outbox yet is no error)", st)
     env.screenshot(os.path.join(env.dir, "actions.png"))
 finally:
     env.stop()

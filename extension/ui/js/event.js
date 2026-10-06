@@ -73,6 +73,8 @@ async function init() {
   $("#end-date").value = dateValue(e);
   $("#end-time").value = timeValue(new Date(ev.end));
   $("#attendees").value = ev.attendees.map(a => formatAddress({ name: a.name, email: a.email })).join("; ");
+  // a meeting asked for from People: its invitees already in
+  if (state.isNew && params.get("attendees")) $("#attendees").value = params.get("attendees");
   if (ev.organizer && !ev.iAmOrganizer) {
     $("#org-row").hidden = false;
     $("#organizer").textContent = formatAddress(ev.organizer);
@@ -88,7 +90,7 @@ async function init() {
   }
   state.dirty = false;
   window.sgmailEvent = { state, save, dump };
-  installTestHook("event", { dump, save: () => !setTimeout(save, 50), setRecurrence: a => {
+  installTestHook("event", { dump, save: () => !setTimeout(save, 50), close: () => !setTimeout(() => window.close(), 50), setRecurrence: a => {
     state.recurrence = a;
     updateInfo();
     return true;

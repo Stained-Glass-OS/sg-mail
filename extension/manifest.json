@@ -10,7 +10,7 @@
   "background": { "scripts": ["background.js"] },
   "permissions": [
     "accountsRead", "accountsFolders", "accountsIdentities", "addressBooks",
-    "messagesRead", "messagesModify", "messagesMove", "messagesDelete", "messagesTags", "messagesUpdate",
+    "messagesRead", "messagesModify", "messagesMove", "messagesDelete", "messagesTags", "messagesTagsList", "messagesUpdate",
     "compose", "compose.send", "compose.save", "notifications", "storage", "unlimitedStorage", "tabs", "menus"
   ],
   "icons": { "32": "icons/sg-mail.svg", "64": "icons/sg-mail.svg" },

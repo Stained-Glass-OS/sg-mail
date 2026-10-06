@@ -290,6 +290,7 @@ export class CalendarModule {
   // ---- the views ---------------------------------------------------------------------------------
 
   render() {
+    this.cancelDraft();
     this.markViewButtons();
     const wrap = h("div", { class: "cal-main" });
     const head = h("div", { class: "cal-head" });
@@ -325,6 +326,10 @@ export class CalendarModule {
     this.allDayRow.append(h("div", { class: "tg-gutter-head", text: "" }));
     this.allCells = days.map(d => {
       const c = h("div", { class: "tg-allcell", "data-day": d.getTime() });
+      c.addEventListener("mousedown", e => {
+        if (e.target !== c || e.button !== 0) return;
+        this.selectDays(e, d, () => this.allCells.map((el, i) => ({ day: days[i], el })));
+      });
       c.addEventListener("dblclick", e => {
         if (e.target === c) this.newEvent({ start: d.getTime(), end: addDays(d, 1).getTime(), allDay: true });
       });
@@ -377,7 +382,8 @@ export class CalendarModule {
       return Math.max(0, Math.min(47, Math.floor((e.clientY - r.top) / SLOT_H)));
     };
     const paintSel = (a, b) => {
-      for (const s of this.main.querySelectorAll(".tg-slot.sel")) s.classList.remove("sel");
+      this.cancelDraft();
+      for (const s of this.main.querySelectorAll(".tg-slot.sel, .tg-allcell.sel")) s.classList.remove("sel");
       const lo = Math.min(a, b), hi = Math.max(a, b);
       for (const s of col.querySelectorAll(".tg-slot")) if (+s.dataset.slot >= lo && +s.dataset.slot <= hi) s.classList.add("sel");
       const start = new Date(day);
@@ -387,7 +393,7 @@ export class CalendarModule {
       this.selection = { start: start.getTime(), end: end.getTime(), allDay: false };
     };
     col.addEventListener("mousedown", e => {
-      if (e.button !== 0 || e.target.closest(".ev")) return;
+      if (e.button !== 0 || e.target.closest(".ev, .ev-draft")) return;
       dragFrom = slotAt(e);
       paintSel(dragFrom, dragFrom);
       this.selectEvent(null);
@@ -435,11 +441,8 @@ export class CalendarModule {
         const cell = h("div", { class: "mg-day" + (d.getMonth() !== this.date.getMonth() ? " other" : "") + (sameDay(d, today) ? " today" : ""), "data-day": d.getTime() });
         cell.append(h("div", { class: "mg-num", text: d.getDate() === 1 ? fmt.monthDay(d) : d.getDate() }));
         cell.addEventListener("mousedown", e => {
-          if (e.target.closest(".mg-ev")) return;
-          for (const c of this.main.querySelectorAll(".mg-day.sel")) c.classList.remove("sel");
-          cell.classList.add("sel");
-          this.selection = { start: d.getTime(), end: addDays(d, 1).getTime(), allDay: true };
-          this.selectEvent(null);
+          if (e.target.closest(".mg-ev, .ev-draft") || e.button !== 0) return;
+          this.selectDays(e, d, () => this.monthCells);
         });
         cell.addEventListener("dblclick", e => {
           if (e.target.closest(".mg-ev")) return;
@@ -476,16 +479,27 @@ export class CalendarModule {
     return `${ev.calendarId}|${ev.id}|${ev.occurrence || ""}`;
   }
 
-  eventEl(ev, cls, style) {
+  eventEl(ev, cls, style, html = "") {
     const el = h("div", {
+      html,
       class: cls + (ev.myStatus === "TENTATIVE" || ev.myStatus === "NEEDS-ACTION" ? " tentative" : "") + (this.selectedKey === this.key(ev) ? " selected" : ""),
       style: `--ev-color:${ev.color};${style || ""}`,
       title: `${ev.title}${ev.location ? "\n" + ev.location : ""}\n${ev.allDay ? "All day" : fmt.time(new Date(ev.start)) + " – " + fmt.time(new Date(ev.end))}`,
       "data-key": this.key(ev),
     });
+    if (!ev.readOnly) {
+      // the edges to drag: top and bottom in the day grid, the right end of
+      // an all-day or month item
+      const edges = cls === "ev" ? ["start", "end"] : ["end"];
+      for (const edge of edges) el.append(h("div", { class: `ev-handle ${edge}`, "data-edge": edge }));
+    }
     el.addEventListener("mousedown", e => {
       e.stopPropagation();
       this.selectEvent(ev);
+      if (e.button === 0 && !ev.readOnly) {
+        const handle = e.target.closest(".ev-handle");
+        this.beginDrag(e, ev, el, handle ? handle.dataset.edge : "move", cls === "ev" ? "grid" : cls === "mg-ev" ? "month" : "allday");
+      }
     });
     el.addEventListener("dblclick", e => {
       e.stopPropagation();
@@ -537,10 +551,10 @@ export class CalendarModule {
         const top = (t.s - dayStart) / 60000 / 30 * SLOT_H;
         const height = Math.max(SLOT_H - 2, (t.e - t.s) / 60000 / 30 * SLOT_H - 2);
         const w = 100 / t.cols;
-        const el = this.eventEl(t.ev, "ev", `top:${top}px;height:${height}px;left:calc(${t.col * w}% + 1px);width:calc(${w}% - 4px)`);
-        el.innerHTML = `<div class="ev-title">${esc(t.ev.title || "(No title)")}</div>` +
+        const el = this.eventEl(t.ev, "ev", `top:${top}px;height:${height}px;left:calc(${t.col * w}% + 1px);width:calc(${w}% - 4px)`,
+          `<div class="ev-title">${esc(t.ev.title || "(No title)")}</div>` +
           (t.ev.location ? `<div class="ev-sub">${esc(t.ev.location)}</div>` : "") +
-          (t.ev.recurring ? `<div class="ev-sub">${icon("repeat", 11)}</div>` : "");
+          (t.ev.recurring ? `<div class="ev-sub">${icon("repeat", 11)}</div>` : ""));
         c.el.append(el);
       }
     }
@@ -548,8 +562,7 @@ export class CalendarModule {
       const d = this.cols[i].day, dEnd = addDays(d, 1).getTime();
       const cell = this.allCells[i];
       for (const ev of this.events.filter(e => e.allDay && e.start < dEnd && e.end > d.getTime())) {
-        const el = this.eventEl(ev, "ev allday");
-        el.textContent = ev.title || "(No title)";
+        const el = this.eventEl(ev, "ev allday", "", `<span class="ev-title">${esc(ev.title || "(No title)")}</span>`);
         cell.append(el);
       }
     }
@@ -563,8 +576,7 @@ export class CalendarModule {
       list.sort((a, b) => (b.allDay - a.allDay) || a.start - b.start);
       const max = Math.max(1, Math.floor((c.el.clientHeight - 20) / 19));
       for (const ev of list.slice(0, max)) {
-        const el = this.eventEl(ev, "mg-ev");
-        el.textContent = (ev.allDay ? "" : fmt.time(new Date(ev.start)) + " ") + (ev.title || "(No title)");
+        const el = this.eventEl(ev, "mg-ev", "", esc((ev.allDay ? "" : fmt.time(new Date(ev.start)) + " ") + (ev.title || "(No title)")));
         c.el.append(el);
       }
       if (list.length > max) {
@@ -583,13 +595,242 @@ export class CalendarModule {
     this.selectedEvent = ev;
     for (const el of this.main.querySelectorAll("[data-key]")) el.classList.toggle("selected", el.dataset.key === this.selectedKey);
     if (ev) {
-      for (const s of this.main.querySelectorAll(".tg-slot.sel, .mg-day.sel")) s.classList.remove("sel");
+      for (const s of this.main.querySelectorAll(".tg-slot.sel, .tg-allcell.sel, .mg-day.sel")) s.classList.remove("sel");
+      this.selection = null;
     }
+  }
+
+  // ---- drag: days picked in the month or the all-day row -----------------------------------------
+
+  selectDays(e, day, cells) {
+    this.cancelDraft();
+    this.selectEvent(null);
+    const paint = (a, b) => {
+      const lo = Math.min(a.getTime(), b.getTime()), hi = Math.max(a.getTime(), b.getTime());
+      for (const s of this.main.querySelectorAll(".tg-slot.sel, .tg-allcell.sel, .mg-day.sel")) s.classList.remove("sel");
+      for (const c of cells()) if (c.day.getTime() >= lo && c.day.getTime() <= hi) c.el.classList.add("sel");
+      this.selection = { start: lo, end: addDays(new Date(hi), 1).getTime(), allDay: true };
+    };
+    paint(day, day);
+    const move = m => {
+      const c = this.cellAt(cells(), m.clientX, m.clientY);
+      if (c) paint(day, c.day);
+    };
+    const up = () => {
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+    };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  }
+
+  // the day cell (or grid column) under a point: by the cells' boxes, the
+  // nearest in each direction when outside them
+  cellAt(cells, x, y) {
+    let best = null, bestD = Infinity;
+    for (const c of cells) {
+      const r = c.el.getBoundingClientRect();
+      const dx = x < r.left ? r.left - x : x >= r.right ? x - r.right + 1 : 0;
+      const dy = y === null ? 0 : y < r.top ? r.top - y : y >= r.bottom ? y - r.bottom + 1 : 0;
+      const d = dx + dy;
+      if (d < bestD) {
+        bestD = d;
+        best = c;
+      }
+    }
+    return best;
+  }
+
+  // ---- drag: an event moved, or made longer or shorter --------------------------------------------
+
+  beginDrag(e, ev, el, edge, kind) {
+    const x0 = e.clientX, y0 = e.clientY;
+    const cells = () => kind === "grid" ? this.cols : kind === "month" ? this.monthCells : this.allCells.map((c, i) => ({ day: this.cols[i].day, el: c }));
+    const from = this.cellAt(cells(), x0, kind === "month" ? y0 : null);
+    if (!from) return;
+    let active = false, change = null;
+    const finish = () => {
+      document.removeEventListener("mousemove", move, true);
+      document.removeEventListener("mouseup", up, true);
+      document.removeEventListener("keydown", key, true);
+      this.paintDrag(null);
+      el.classList.remove("dragging");
+    };
+    const move = m => {
+      if (!active) {
+        if (Math.abs(m.clientX - x0) + Math.abs(m.clientY - y0) < 5) return;
+        active = true;
+        el.classList.add("dragging");
+      }
+      const to = this.cellAt(cells(), m.clientX, kind === "month" ? m.clientY : null);
+      const days = Math.round((to.day - from.day) / 86400000);
+      // the day grid: quarter hours by the pointer's height
+      const minutes = kind === "grid" ? Math.round((m.clientY - y0) / (SLOT_H / 2)) * 15 : 0;
+      change = this.dragged(ev, edge, days, minutes);
+      this.paintDrag(change, kind);
+      m.preventDefault();
+    };
+    const up = m => {
+      finish();
+      if (active && change && (change.start !== ev.start || change.end !== ev.end)) this.commitChange(ev, change);
+    };
+    const key = k => {
+      if (k.key === "Escape") {
+        k.preventDefault();
+        k.stopPropagation();
+        change = null;
+        finish();
+      }
+    };
+    document.addEventListener("mousemove", move, true);
+    document.addEventListener("mouseup", up, true);
+    document.addEventListener("keydown", key, true);
+  }
+
+  // the times an event would have: moved by days and minutes, or one of its
+  // ends moved (never shorter than a quarter hour, or a day when all day)
+  dragged(ev, edge, days, minutes) {
+    const shift = (ms, d, min) => {
+      const x = new Date(ms);
+      x.setDate(x.getDate() + d);
+      return x.getTime() + min * 60000;
+    };
+    const least = ev.allDay ? 86400000 : 15 * 60000;
+    let start = ev.start, end = ev.end;
+    if (edge === "move") {
+      start = shift(ev.start, days, minutes);
+      end = start + (ev.end - ev.start);
+    } else if (edge === "end") {
+      end = Math.max(start + least, shift(ev.end, days, minutes));
+    } else {
+      start = Math.min(end - least, shift(ev.start, days, minutes));
+    }
+    return { start, end, origStart: ev.start };
+  }
+
+  paintDrag(change, kind) {
+    for (const g of this.main.querySelectorAll(".ev-ghost")) g.remove();
+    for (const c of this.main.querySelectorAll(".drop")) c.classList.remove("drop");
+    if (!change) return;
+    if (kind === "grid") {
+      for (const c of this.cols) {
+        const ds = c.day.getTime(), de = addDays(c.day, 1).getTime();
+        if (change.start >= de || change.end <= ds) continue;
+        const s = Math.max(change.start, ds), e = Math.min(change.end, de);
+        c.el.append(h("div", { class: "ev-ghost", style: `top:${(s - ds) / 60000 / 30 * SLOT_H}px;height:${Math.max(6, (e - s) / 60000 / 30 * SLOT_H - 2)}px`,
+          text: `${fmt.time(new Date(change.start))} – ${fmt.time(new Date(change.end))}` }));
+      }
+      return;
+    }
+    const cells = kind === "month" ? this.monthCells : this.allCells.map((c, i) => ({ day: this.cols[i].day, el: c }));
+    for (const c of cells) {
+      const ds = c.day.getTime(), de = addDays(c.day, 1).getTime();
+      if (change.start < de && change.end > ds) c.el.classList.add("drop");
+    }
+  }
+
+  // the dropped times saved: for an occurrence, this one or the series (as
+  // Outlook asks); for a meeting of one's own, an update to the attendees
+  async commitChange(ev, change) {
+    let series = false;
+    if (ev.recurring && ev.occurrence) {
+      const v = await dialog({
+        title: "Change Repeating Item",
+        body: `<p>"${esc(ev.title)}" is a recurring appointment. Do you want to change just this one, or the entire series?</p>`,
+        buttons: [{ label: "Just this one", value: "one", primary: true }, { label: "The entire series", value: "series" }, { label: "Cancel", value: null, cancel: true }],
+      });
+      if (!v) return;
+      series = v === "series";
+    }
+    let send = false;
+    if (ev.attendees.length && ev.iAmOrganizer) {
+      const v = await dialog({
+        title: "Send Update",
+        body: `<p>"${esc(ev.title)}" is a meeting. Send an update with the new time to the attendees?</p>`,
+        buttons: [{ label: "Send Update", value: "send", primary: true }, { label: "Don't Send", value: "no" }, { label: "Cancel", value: null, cancel: true }],
+      });
+      if (!v) return;
+      send = v === "send";
+    }
+    // drawn where it was dropped while it is saved
+    const was = { start: ev.start, end: ev.end };
+    Object.assign(ev, { start: change.start, end: change.end });
+    if (this.view === "month") this.placeMonth();
+    else this.placeGrid();
+    try {
+      await messenger.sgmail.moveEvent(ev.calendarId, ev.id, ev.occurrence || null, change, { series, sendInvitations: send });
+      this.app.setStatus(`"${ev.title}" moved to ${ev.allDay ? fmt.longDate(new Date(change.start)) : fmt.shortDayTime(new Date(change.start))}`);
+    } catch (e) {
+      Object.assign(ev, was);
+      toast("Could not change it: " + e.message);
+    }
+    this.refresh();
+  }
+
+  // ---- typing on picked time: a new appointment in place ----------------------------------------
+
+  quickCreate(first = "") {
+    const sel = this.selection;
+    if (!sel || !this.defaultCalendar()) return false;
+    this.cancelDraft();
+    let host, style = "";
+    if (sel.allDay) {
+      const cells = this.view === "month" ? this.monthCells : (this.allCells || []).map((c, i) => ({ day: this.cols[i].day, el: c }));
+      host = (cells.find(c => c.day.getTime() === sel.start) || {}).el;
+    } else {
+      const day = startOfDay(new Date(sel.start));
+      const c = (this.cols || []).find(x => sameDay(x.day, day));
+      host = c && c.el;
+      style = `top:${(sel.start - day.getTime()) / 60000 / 30 * SLOT_H}px;height:${Math.max(SLOT_H - 2, (sel.end - sel.start) / 60000 / 30 * SLOT_H - 2)}px`;
+    }
+    if (!host) return false;
+    const input = h("input", { type: "text", class: "ev-input", "aria-label": "Subject", autocomplete: "off" });
+    const draft = h("div", { class: "ev-draft" + (sel.allDay ? " allday" : ""), style }, input);
+    host.append(draft);
+    input.value = first;
+    input.focus();
+    let done = false;
+    const save = async () => {
+      if (done) return;
+      done = true;
+      const title = input.value.trim();
+      draft.remove();
+      this.draft = null;
+      if (!title) return;
+      const cal = this.defaultCalendar();
+      try {
+        await messenger.sgmail.saveEvent({ calendarId: cal.id, title, location: "", description: "", start: sel.start, end: sel.end, allDay: !!sel.allDay,
+          attendees: [], reminder: sel.allDay ? 1080 : 15, showAs: sel.allDay ? "free" : "busy", recurrence: null }, {});
+      } catch (e) {
+        toast("Could not save it: " + e.message);
+      }
+      this.refresh();
+    };
+    // clicking elsewhere keeps what was typed, as Outlook; Escape drops it
+    this.draft = { el: draft, sel, save };
+    input.addEventListener("keydown", k => {
+      if (k.key === "Enter") {
+        k.preventDefault();
+        save();
+      } else if (k.key === "Escape") {
+        k.preventDefault();
+        k.stopPropagation();
+        done = true;
+        draft.remove();
+        this.draft = null;
+      }
+    });
+    input.addEventListener("blur", () => save());
+    return true;
+  }
+
+  cancelDraft() {
+    if (this.draft) this.draft.save();
   }
 
   // ---- events ----------------------------------------------------------------------------------------
 
-  newEvent({ start, end, allDay, meeting } = {}) {
+  newEvent({ start, end, allDay, meeting, attendees } = {}) {
     if (!this.writableCalendars().length) {
       toast("There is no calendar to put it in: add one first (Open Calendar).");
       return;
@@ -609,6 +850,7 @@ export class CalendarModule {
     const q = new URLSearchParams({ start: String(start), end: String(end || start + 30 * 60000), calendarId: (this.defaultCalendar() || {}).id || "" });
     if (allDay) q.set("allDay", "1");
     if (meeting) q.set("meeting", "1");
+    if (attendees) q.set("attendees", attendees);
     return this.openWindow(q);
   }
 

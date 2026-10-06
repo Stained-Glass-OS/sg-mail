@@ -103,11 +103,14 @@ try:
     g.check("Regards, Bob" in d["reader"]["text"], "plain text shown", d["reader"]["text"][:200])
     g.check(d["reader"]["attachments"] == ["budget.csv"], "its attachment listed", d["reader"]["attachments"])
 
-    # Unread filter
-    env.ui("click", selector=".list-filter[data-filter=unread]")
+    # Unread filter (the Inbox has the Focused / Other tabs: Home > Filter Email)
+    env.ui("click", selector="#rb-filter-email")
+    env.ui("menu", label="Unread")
     d = env.wait_ui("mail", lambda r: "Yesterday's note" not in [x.get("subject") for x in r["list"]], timeout=10)
     g.check("An old message" not in [x.get("subject") for x in d["list"]], "Unread shows only unread messages", [x.get("subject") for x in d["list"]])
-    env.ui("click", selector=".list-filter[data-filter=all]")
+    g.check(d["status"].startswith("Filter applied"), "the status bar says a filter is applied", d["status"])
+    env.ui("click", selector="#rb-filter-email")
+    env.ui("menu", label="Clear Filter")
 
     # search the mailbox: a message in another folder
     env.ui("type", selector="#search", value="kite")

@@ -8,7 +8,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 import { icon } from "./icons.js";
-import { h, $, esc, showMenu, toast, debounce, displayName, confirmBox, dialog, testDump } from "./util.js";
+import { h, $, esc, showMenu, toast, debounce, displayName, parseAddress, confirmBox, dialog, testDump } from "./util.js";
 import { FolderPane, roleOf, folderLabel } from "./folders.js";
 import { MessageList } from "./msglist.js";
 import { ReadingPane } from "./reader.js";
@@ -44,14 +44,45 @@ export class MailModule {
       openFolderOf: m => this.showInFolder(m),
     });
     this.reloadSoon = debounce(() => this.reload(true), 300);
+    this.folders.onRefreshed = () => this.syncSentForFocus();
+    // the Focused Inbox: on as Outlook's; "Move to Focused/Other" for one
+    // message (by its Message-ID) or always for its sender
+    this.focus = { on: true, rules: {}, msgs: {}, info: new Map() };
+    this.list.focusFilter = null;
+    this.list.focusTab = "focused";
     this.wire();
   }
 
   async start() {
+    await this.loadTags();
+    try {
+      const st = await messenger.storage.local.get(["focusedInbox", "focusRules", "focusMsgs"]);
+      this.focus.on = st.focusedInbox !== false;
+      this.focus.rules = st.focusRules || {};
+      this.focus.msgs = st.focusMsgs || {};
+    } catch (e) {
+      // first start
+    }
     await this.folders.load();
     const inbox = this.folders.firstInbox();
     if (inbox) this.folders.select(inbox.id);
     else this.list.setMessages([]);
+    this.syncSentForFocus();
+  }
+
+  // the people written to are in the Sent folders: their news first (an
+  // IMAP account's Sent is not looked at otherwise), then decide again
+  async syncSentForFocus() {
+    if (!this.focus.on) return;
+    // (a new account's folders get their roles once its server has listed them)
+    this.focus.sentSynced = this.focus.sentSynced || new Set();
+    const sent = this.folders.accounts.map(a => this.folders.folderByRole(a.id, "sent")).filter(f => f && !this.focus.sentSynced.has(f.id));
+    if (!sent.length) return;
+    for (const f of sent) this.focus.sentSynced.add(f.id);
+    await Promise.all(sent.map(f => messenger.sgmail.updateFolder(f.id).catch(() => {})));
+    this.focus.info.clear();
+    this.focus.fresh = true;
+    if (this.focusShown()) this.reload(true);
   }
 
   wire() {
@@ -65,9 +96,12 @@ export class MailModule {
       { label: "Current Mailbox", checked: this.search.scope === "mailbox", action: () => this.setScope("mailbox") },
       { label: "All Mailboxes", checked: this.search.scope === "all", action: () => this.setScope("all") },
     ], e.currentTarget));
-    for (const b of document.querySelectorAll(".list-filter")) {
-      b.addEventListener("click", () => this.setFilter(b.dataset.filter));
-    }
+    $(".list-filters").addEventListener("click", e => {
+      const b = e.target.closest(".list-filter");
+      if (!b) return;
+      if (b.dataset.focus) this.setFocusTab(b.dataset.focus);
+      else this.setFilter(b.dataset.filter);
+    });
     $("#list-sort").addEventListener("click", e => {
       const s = this.list.sort;
       const pick = by => () => {
@@ -90,7 +124,11 @@ export class MailModule {
 
     messenger.messages.onUpdated.addListener((message, changed) => {
       this.list.update(message);
-      if (this.reader.message && this.reader.message.id === message.id) Object.assign(this.reader.message, message);
+      if (changed && "read" in changed) this.paintFocusTabs();
+      if (this.reader.message && this.reader.message.id === message.id) {
+        Object.assign(this.reader.message, message);
+        if (changed && "tags" in changed) this.reader.paintCategories();
+      }
       this.app.updateRibbon();
     });
     messenger.messages.onDeleted.addListener(list => {
@@ -100,16 +138,22 @@ export class MailModule {
       this.list.remove(original.messages.map(m => m.id));
       if (this.folder && !this.search.text) {
         const here = moved.messages.filter(m => m.folder && m.folder.id === this.folder.id);
-        if (here.length) this.list.add(here);
+        if (here.length) this.addToList(here);
       }
     });
     messenger.messages.onCopied?.addListener((original, copied) => {
       if (this.folder && !this.search.text) {
         const here = copied.messages.filter(m => m.folder && m.folder.id === this.folder.id);
-        if (here.length) this.list.add(here);
+        if (here.length) this.addToList(here);
       }
     });
     messenger.messages.onNewMailReceived.addListener((folder, list) => this.onNewMail(folder, list));
+    // a new contact is someone known: the Focused Inbox decides again
+    const contactsChanged = debounce(() => {
+      this.focus.info.clear();
+      if (this.focusShown()) this.reload(true);
+    }, 500);
+    for (const ev of ["onCreated", "onUpdated", "onDeleted"]) messenger.addressBooks.contacts?.[ev]?.addListener(contactsChanged);
     messenger.notifications.onClicked.addListener(id => this.onNotificationClicked(id));
   }
 
@@ -117,13 +161,16 @@ export class MailModule {
 
   async openFolder(f) {
     this.folder = f;
+    this.focus.info.clear();
     this.clearSearch(false);
+    this.list.focusTab = "focused";
     this.list.folderRole = roleOf(f);
     $("#search").placeholder = this.search.scope === "folder" ? `Search ${folderLabel(f)}` : this.search.scope === "all" ? "Search All Mailboxes" : "Search Current Mailbox";
     this.title = `${folderLabel(f)} - ${this.accountLabel(f)}`;
     this.app.setTitle(this.title);
     this.reader.showEmpty();
     await this.reload(false);
+    if (f.virtual) return;
     // the server's news for this folder, then the list again
     messenger.sgmail.updateFolder(f.id).then(() => {
       (this.synced = this.synced || new Set()).add(f.id);
@@ -132,6 +179,7 @@ export class MailModule {
   }
 
   accountLabel(f) {
+    if (f.virtual) return "Search Folders";
     const a = this.folders.accounts.find(x => x.id === f.accountId);
     if (!a) return "On This Computer";
     return (a.identities[0] || {}).email || a.name;
@@ -157,16 +205,56 @@ export class MailModule {
     }
     let msgs = [];
     try {
-      msgs = await this.listFolder(f.id);
+      msgs = f.virtual ? await this.searchFolder(f.virtual) : await this.listFolder(f.id);
     } catch (e) {
       console.error("sg-mail: list", e);
     }
     if (this.folder !== f || this.search.text) return;
+    if (this.focusShown()) await this.classify(msgs);
+    if (this.folder !== f || this.search.text) return;
+    this.applyFocus();
     this.list.setLoading(false);
     this.list.emptyText = this.list.filter === "unread" ? "No unread items." : "We didn't find anything to show here.";
     this.list.setMessages(msgs, { keepSelection });
+    this.paintFocusTabs();
     this.updateStatus();
     this.dumpSoon();
+  }
+
+  // the server's news for folders this session has not looked at yet,
+  // three at a time (Thunderbird searches what it has)
+  async syncFolders(list) {
+    this.synced = this.synced || new Set();
+    const queue = list.filter(f => !this.synced.has(f.id));
+    await Promise.all([0, 1, 2].map(async () => {
+      while (queue.length) {
+        const f = queue.shift();
+        try {
+          await messenger.sgmail.updateFolder(f.id);
+          this.synced.add(f.id);
+        } catch (e) {
+          // offline: what is kept
+        }
+      }
+    }));
+  }
+
+  // a Search Folder's messages: unread (or flagged) anywhere but Deleted
+  // Items and Junk Email (and, for Unread Mail, Sent, Drafts and Outbox)
+  async searchFolder(kind) {
+    const skip = kind === "unread" ? ["trash", "junk", "sent", "drafts", "outbox", "templates"] : ["trash", "junk"];
+    await this.syncFolders([...this.folders.folders.values()].filter(f => !skip.includes(roleOf(f))));
+    const out = [];
+    let page = await messenger.messages.query(kind === "unread" ? { read: false, messagesPerPage: 500 } : { flagged: true, messagesPerPage: 500 });
+    out.push(...page.messages);
+    while (page.id && out.length < 5000) {
+      page = await messenger.messages.continueList(page.id);
+      out.push(...page.messages);
+    }
+    return out.filter(m => {
+      const f = m.folder && this.folders.folders.get(m.folder.id);
+      return !f || !skip.includes(roleOf(f));
+    });
   }
 
   relayout() {
@@ -177,7 +265,8 @@ export class MailModule {
 
   setFilter(filter) {
     this.list.filter = filter;
-    for (const b of document.querySelectorAll(".list-filter")) b.classList.toggle("active", b.dataset.filter === filter);
+    this.renderListTabs();
+    this.updateStatus();
     this.list.emptyText = filter === "unread" ? "No unread items." : filter === "flagged" ? "No flagged items." : "We didn't find anything to show here.";
     this.relayout();
     this.app.ribbon.toggle("filter-unread", filter === "unread");
@@ -205,18 +294,7 @@ export class MailModule {
        (this.search.scope === "folder" && this.folder && f.id === this.folder.id)));
     if (scope.length) {
       this.app.setStatus("Searching…");
-      const queue = [...scope];
-      await Promise.all([0, 1, 2].map(async () => {
-        while (queue.length) {
-          const f = queue.shift();
-          try {
-            await messenger.sgmail.updateFolder(f.id);
-            this.synced.add(f.id);
-          } catch (e) {
-            // offline: what is kept
-          }
-        }
-      }));
+      await this.syncFolders(scope);
       if (this.searchToken !== token) return;
     }
     const q = { fullText: text, messagesPerPage: 200 };
@@ -239,6 +317,7 @@ export class MailModule {
     this.list.setLoading(false);
     this.list.emptyText = "We didn't find anything to show here.";
     this.list.folderRole = "";
+    this.applyFocus();
     this.list.setMessages(out);
     this.app.setStatus(`${out.length} result${out.length === 1 ? "" : "s"} for "${text}"`);
     this.dumpSoon();
@@ -253,11 +332,135 @@ export class MailModule {
     if (reload) this.reload(false);
   }
 
+  // ---- the Focused Inbox -------------------------------------------------------------------
+
+  focusShown() {
+    return this.focus.on && !!this.folder && roleOf(this.folder) === "inbox" && !this.search.text;
+  }
+
+  // what the decision is made by, for the messages not asked about yet
+  async classify(msgs) {
+    const want = msgs.filter(m => !this.focus.info.has(m.id)).map(m => m.id);
+    for (let i = 0; i < want.length; i += 500) {
+      try {
+        for (const x of await messenger.sgmail.focusInfo(want.slice(i, i + 500), !!this.focus.fresh)) this.focus.info.set(x.id, x);
+        this.focus.fresh = false;
+      } catch (e) {
+        console.error("sg-mail: focused", e);
+        break;
+      }
+    }
+  }
+
+  // Focused or Other: the person's own choice for this message, then for
+  // its sender; then people they know are Focused, bulk mail Other, and
+  // the rest Focused
+  focusOf(m) {
+    const mine = m.headerMessageId && this.focus.msgs[m.headerMessageId];
+    if (mine) return mine;
+    const x = this.focus.info.get(m.id) || {};
+    const email = x.email || parseAddress(m.author).email.toLowerCase();
+    if (this.focus.rules[email]) return this.focus.rules[email];
+    if (x.known) return "focused";
+    if (x.bulk) return "other";
+    return "focused";
+  }
+
+  applyFocus() {
+    this.list.focusFilter = this.focusShown() ? (m => this.focusOf(m) === this.list.focusTab) : null;
+    this.renderListTabs();
+  }
+
+  renderListTabs() {
+    const box = $(".list-filters");
+    const want = this.focusShown() ? "focus" : "filters";
+    if (box.dataset.kind !== want) {
+      box.dataset.kind = want;
+      box.replaceChildren(...(want === "focus"
+        ? [h("button", { class: "list-filter", "data-focus": "focused", role: "tab", text: "Focused" }),
+          h("button", { class: "list-filter", "data-focus": "other", role: "tab", html: `Other<span class="lf-count"></span>` })]
+        : [h("button", { class: "list-filter", "data-filter": "all", role: "tab", text: "All" }),
+          h("button", { class: "list-filter", "data-filter": "unread", role: "tab", text: "Unread" })]));
+    }
+    for (const b of box.querySelectorAll(".list-filter")) {
+      const on = want === "focus" ? b.dataset.focus === this.list.focusTab : b.dataset.filter === (this.list.filter === "flagged" ? "all" : this.list.filter);
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-selected", on ? "true" : "false");
+    }
+    this.paintFocusTabs();
+  }
+
+  // the unread messages waiting in the tab not shown, as Outlook's hint
+  paintFocusTabs() {
+    if (!this.focusShown()) return;
+    const other = this.list.focusTab === "focused" ? "other" : "focused";
+    const n = this.list.messages.filter(m => !m.read && this.focusOf(m) === other).length;
+    for (const b of document.querySelectorAll(".list-filter[data-focus]")) {
+      let c = b.querySelector(".lf-count");
+      if (!c) b.append(c = h("span", { class: "lf-count" }));
+      c.textContent = b.dataset.focus === other && n ? String(n) : "";
+    }
+  }
+
+  setFocusTab(tab) {
+    this.list.focusTab = tab;
+    this.renderListTabs();
+    this.list.selected.clear();
+    this.relayout();
+    this.onSelection([]);
+    this.dumpSoon();
+  }
+
+  async setFocusedInbox(on) {
+    this.focus.on = on;
+    messenger.storage.local.set({ focusedInbox: on }).catch(() => {});
+    if (on && this.folder) await this.classify(this.list.messages);
+    this.list.focusTab = "focused";
+    this.applyFocus();
+    this.relayout();
+    this.app.updateRibbon();
+    this.dumpSoon();
+  }
+
+  // Move to Focused / Other; always: every message from its sender, now and later
+  async moveFocus(msgs, target, always = false) {
+    if (!msgs.length) return;
+    if (always) {
+      for (const m of msgs) {
+        const x = this.focus.info.get(m.id) || {};
+        const email = x.email || parseAddress(m.author).email.toLowerCase();
+        if (email) this.focus.rules[email] = target;
+        // the sender's rule decides from now on
+        if (m.headerMessageId) delete this.focus.msgs[m.headerMessageId];
+      }
+      await messenger.storage.local.set({ focusRules: this.focus.rules, focusMsgs: this.focus.msgs }).catch(() => {});
+    } else {
+      for (const m of msgs) if (m.headerMessageId) this.focus.msgs[m.headerMessageId] = target;
+      // kept for the last few thousand
+      const keys = Object.keys(this.focus.msgs);
+      for (const k of keys.slice(0, Math.max(0, keys.length - 3000))) delete this.focus.msgs[k];
+      await messenger.storage.local.set({ focusMsgs: this.focus.msgs }).catch(() => {});
+    }
+    this.list.selected.clear();
+    this.relayout();
+    this.onSelection([]);
+    this.paintFocusTabs();
+    const label = target === "other" ? "Other" : "Focused";
+    this.app.setStatus(always ? `Messages from ${displayName(msgs[0].author)} will always go to ${label}` : `Moved to ${label}`);
+    this.dumpSoon();
+  }
+
+  async addToList(msgs) {
+    if (this.focusShown()) await this.classify(msgs);
+    this.list.add(msgs);
+    this.paintFocusTabs();
+  }
+
   updateStatus() {
-    if (!this.folder || this.search.text) return;
+    if (!this.folder || this.search.text || this.app.module !== "mail") return;
     const info = this.folders.info.get(this.folder.id) || {};
     const n = this.list.messages.length || info.total || 0;
-    this.app.setStatus(`Items: ${n}` + (info.unread ? `    Unread: ${info.unread}` : ""));
+    this.app.setStatus((this.list.filter !== "all" ? "Filter applied    " : "") + `Items: ${n}` + (info.unread ? `    Unread: ${info.unread}` : ""));
   }
 
   // ---- selection and reading ------------------------------------------------------------
@@ -397,6 +600,79 @@ export class MailModule {
     if (target) await this.moveTo(sel, target, copy);
   }
 
+  // ---- categories (Thunderbird's tags) ------------------------------------------------------
+
+  async loadTags() {
+    try {
+      this.tags = await (messenger.messages.tags ? messenger.messages.tags.list() : messenger.messages.listTags());
+    } catch (e) {
+      this.tags = [];
+    }
+    const colors = new Map(this.tags.map(t => [t.key, t.color]));
+    this.list.tagColor = key => colors.get(key) || null;
+    this.reader.tagsOf = keys => (keys || []).map(k => this.tags.find(t => t.key === k)).filter(Boolean);
+  }
+
+  categorizeMenu() {
+    const sel = this.selection();
+    const items = (this.tags || []).map(t => ({
+      label: t.tag, swatch: t.color, checked: sel.length > 0 && sel.every(m => (m.tags || []).includes(t.key)),
+      action: () => this.categorize(sel, t.key),
+    }));
+    items.push({ separator: true }, { label: "Clear All Categories", action: () => this.categorize(sel, null) });
+    return items;
+  }
+
+  // a category on (or off, when every selected message has it); null: none
+  async categorize(msgs, key) {
+    if (!msgs.length) return;
+    const on = key && !msgs.every(m => (m.tags || []).includes(key));
+    for (const m of msgs) {
+      let tags = (m.tags || []).filter(k => k !== key);
+      if (key === null) tags = [];
+      else if (on) tags.push(key);
+      m.tags = tags;
+      this.list.update(m);
+      try {
+        await messenger.messages.update(m.id, { tags });
+      } catch (e) {
+        toast("Could not categorize: " + e.message);
+      }
+    }
+    if (this.reader.message && msgs.some(m => m.id === this.reader.message.id)) this.reader.paintCategories?.();
+  }
+
+  // ---- rules ----------------------------------------------------------------------------------
+
+  rulesMenu() {
+    const sel = this.selection();
+    const who = sel.length === 1 ? displayName(sel[0].author) : "";
+    return [
+      { label: who ? `Always Move Messages From: ${who}` : "Always Move Messages From…", icon: "move", disabled: sel.length !== 1, action: () => this.alwaysMoveFrom(sel[0]) },
+      { separator: true },
+      { label: "Manage Rules & Alerts…", icon: "rules", action: () => messenger.sgmail.openTool("filters") },
+    ];
+  }
+
+  // a rule (a Thunderbird filter on the account): this sender's messages to
+  // a folder, the ones here now and the ones that come
+  async alwaysMoveFrom(m) {
+    if (!m || !m.folder) return;
+    const email = parseAddress(m.author).email.toLowerCase();
+    const f = this.folders.folders.get(m.folder.id) || m.folder;
+    const target = await this.folders.pickFolder(`Always move messages from ${displayName(m.author)}`, f.accountId);
+    if (!target) return;
+    const inbox = this.folders.inbox(f.accountId) || f;
+    try {
+      await messenger.sgmail.createMoveRule(inbox.id, email, target);
+    } catch (e) {
+      return toast("The rule could not be made: " + e.message);
+    }
+    const now = this.list.messages.filter(x => parseAddress(x.author).email.toLowerCase() === email && (!x.folder || x.folder.id !== target));
+    if (now.length) await this.moveTo(now, target);
+    this.app.setStatus(`Rule made: messages from ${email} go to ${folderLabel(this.folders.folders.get(target) || { name: "the folder", specialUse: [] })}`);
+  }
+
   moveMenu() {
     const sel = this.selection();
     const items = [];
@@ -424,7 +700,14 @@ export class MailModule {
         : { label: "Mark as Unread", icon: "mail-unread", shortcut: "Ctrl+U", action: () => this.markRead(sel, false) },
       { label: sel.every(m => m.flagged) ? "Clear Flag" : "Flag", icon: "flag", shortcut: "Insert", action: () => this.flag(sel) },
       { separator: true },
+      ...(this.focusShown() ? (() => {
+        const to = this.list.focusTab === "focused" ? "other" : "focused", name = to === "other" ? "Other" : "Focused";
+        return [{ label: `Move to ${name}`, icon: "focused", action: () => this.moveFocus(sel, to) },
+          { label: `Always Move to ${name}`, action: () => this.moveFocus(sel, to, true) }, { separator: true }];
+      })() : []),
       { label: "Move", icon: "move", submenu: this.moveMenu() },
+      { label: "Categorize", icon: "category", submenu: this.categorizeMenu() },
+      { label: "Rules", icon: "rules", submenu: this.rulesMenu() },
       { label: "Junk", icon: "junk", submenu: [
         { label: "Block Sender / Junk", action: () => this.junkSelected(true) },
         { label: "Not Junk", action: () => this.junkSelected(false) },
@@ -437,7 +720,8 @@ export class MailModule {
   // ---- new mail ---------------------------------------------------------------------------
 
   async onNewMail(folder, list) {
-    if (this.folder && folder.id === this.folder.id && !this.search.text) this.list.add(list.messages);
+    if (this.folder && folder.id === this.folder.id && !this.search.text) await this.addToList(list.messages);
+    if (this.folder && this.folder.virtual && !this.search.text) this.reloadSoon();
     if ((folder.specialUse || []).includes("junk")) return;
     const msgs = list.messages.filter(m => !m.read && !m.junk);
     if (!msgs.length) return;
@@ -489,6 +773,9 @@ export class MailModule {
       tree,
       counts,
       list: this.list.dump(),
+      focused: this.focusShown() ? { tab: this.list.focusTab, tabs: [...document.querySelectorAll(".list-filter")].map(b => b.textContent.trim()),
+        of: Object.fromEntries(this.list.messages.map(m => [m.subject, this.focusOf(m)])) } : null,
+      readingPane: this.app.readingPane,
       reader: this.reader.dump(),
       notifications: this.app.notifications,
       title: document.title,

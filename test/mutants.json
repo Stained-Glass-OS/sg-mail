@@ -35,8 +35,8 @@
   "name": "mail-read-search",
   "gate": "mail-read-gate.py",
   "file": "ui/js/mail.js",
-  "find": "            await messenger.sgmail.updateFolder(f.id);\n            this.synced.add(f.id);",
-  "replace": "            this.synced.add(f.id);",
+  "find": "          await messenger.sgmail.updateFolder(f.id);\n          this.synced.add(f.id);",
+  "replace": "          this.synced.add(f.id);",
   "why": "search not looking at folders not opened"
  },
  {
@@ -238,5 +238,229 @@
   "find": "          if (chosen) {\n            itip.promptCalendar",
   "replace": "          if (false) {\n            itip.promptCalendar",
   "why": "Thunderbird's calendar dialog stopping the answer"
+ },
+ {
+  "name": "caldrag-move-days",
+  "gate": "caldrag-gate.py",
+  "file": "ui/js/calendar.js",
+  "find": "start = shift(ev.start, days, minutes);",
+  "replace": "start = shift(ev.start, 0, minutes);",
+  "why": "drags to another day not moving the day"
+ },
+ {
+  "name": "caldrag-resize",
+  "gate": "caldrag-gate.py",
+  "file": "ui/js/calendar.js",
+  "find": "end = Math.max(start + least, shift(ev.end, days, minutes));",
+  "replace": "end = ev.end;",
+  "why": "the end edge not resizing"
+ },
+ {
+  "name": "caldrag-occurrence",
+  "gate": "caldrag-gate.py",
+  "file": "experiments/parent.js",
+  "find": "if (occurrence && old.recurrenceInfo && !options.series) {\n            const occ = old.recurrenceInfo.getOccurrenceFor(calDateTime(occurrence, allDay));",
+  "replace": "if (false) {\n            const occ = old.recurrenceInfo.getOccurrenceFor(calDateTime(occurrence, allDay));",
+  "why": "\"Just this one\" moving the whole series"
+ },
+ {
+  "name": "caldrag-series-weekday",
+  "gate": "caldrag-gate.py",
+  "file": "experiments/parent.js",
+  "find": "if (days.length && days.every(d => d >= 1 && d <= 7)) r.setComponent(\"BYDAY\", days.map(d => ((d - 1 + shift) % 7) + 1));",
+  "replace": "",
+  "why": "a weekly series moved to another day keeping its old weekday"
+ },
+ {
+  "name": "caldrag-prompt",
+  "gate": "caldrag-gate.py",
+  "file": "ui/js/calendar.js",
+  "find": "if (ev.recurring && ev.occurrence) {\n      const v = await dialog({\n        title: \"Change Repeating Item\",",
+  "replace": "if (false) {\n      const v = await dialog({\n        title: \"Change Repeating Item\",",
+  "why": "no this-one-or-the-series question"
+ },
+ {
+  "name": "caldrag-update",
+  "gate": "caldrag-gate.py",
+  "file": "ui/js/calendar.js",
+  "find": "{ series, sendInvitations: send }",
+  "replace": "{ series, sendInvitations: false }",
+  "why": "no update mailed to a meeting's attendees"
+ },
+ {
+  "name": "caldrag-quick",
+  "gate": "caldrag-gate.py",
+  "file": "ui/js/main.js",
+  "find": "if (!typing && !ctrl && !alt && e.key.length === 1 && e.key !== \" \" && cal.selection && !cal.selectedEvent) return run(() => cal.quickCreate(e.key));",
+  "replace": "",
+  "why": "typing on picked time not making an appointment"
+ },
+ {
+  "name": "caldrag-month-rows",
+  "gate": "caldrag-gate.py",
+  "file": "ui/js/calendar.js",
+  "find": "const to = this.cellAt(cells(), m.clientX, kind === \"month\" ? m.clientY : null);",
+  "replace": "const to = this.cellAt(cells(), m.clientX, null);",
+  "why": "month drags ignoring the week dropped on"
+ },
+ {
+  "name": "caldrag-escape",
+  "gate": "caldrag-gate.py",
+  "file": "ui/js/calendar.js",
+  "find": "        done = true;\n        draft.remove();\n        this.draft = null;",
+  "replace": "        save();",
+  "why": "Escape saving the typed appointment"
+ },
+ {
+  "name": "focused-bulk",
+  "gate": "focused-gate.py",
+  "file": "experiments/parent.js",
+  "find": "if (prop(\"list-unsubscribe\")) bulk = \"list-unsubscribe\";",
+  "replace": "if (false) bulk = \"\";",
+  "why": "newsletters (List-Unsubscribe) in Focused"
+ },
+ {
+  "name": "focused-contact",
+  "gate": "focused-gate.py",
+  "file": "experiments/parent.js",
+  "find": "else if (email && hasContact(email)) knownBy = \"contact\";",
+  "replace": "",
+  "why": "contacts' bulk-looking mail in Other"
+ },
+ {
+  "name": "focused-sent",
+  "gate": "focused-gate.py",
+  "file": "experiments/parent.js",
+  "find": "          for (const e of emailsIn(hdr.recipients)) set.add(e);\n",
+  "replace": "",
+  "why": "people written to not counted as known"
+ },
+ {
+  "name": "focused-sent-sync",
+  "gate": "focused-gate.py",
+  "file": "ui/js/mail.js",
+  "find": "    await Promise.all(sent.map(f => messenger.sgmail.updateFolder(f.id).catch(() => {})));\n",
+  "replace": "",
+  "why": "the Sent folder never looked at"
+ },
+ {
+  "name": "focused-always",
+  "gate": "focused-gate.py",
+  "file": "ui/js/mail.js",
+  "find": "if (email) this.focus.rules[email] = target;",
+  "replace": "",
+  "why": "Always Move not applying to the sender's next message"
+ },
+ {
+  "name": "focused-remember",
+  "gate": "focused-gate.py",
+  "file": "ui/js/mail.js",
+  "find": "await messenger.storage.local.set({ focusMsgs: this.focus.msgs }).catch(() => {});",
+  "replace": "",
+  "why": "a moved message forgotten at the next start"
+ },
+ {
+  "name": "people-keep",
+  "gate": "people-gate.py",
+  "file": "ui/js/vcard.js",
+  "find": "if (!EDITED.has(l.name) || other) out.push(l.line);",
+  "replace": "if (false) out.push(l.line);",
+  "why": "an edit dropping the vCard lines People does not show"
+ },
+ {
+  "name": "people-nav",
+  "gate": "people-gate.py",
+  "file": "ui/js/main.js",
+  "find": "if (ctrl && !shift && !alt && key === \"3\") return run(() => this.showModule(\"people\"));",
+  "replace": "if (ctrl && !shift && !alt && key === \"3\") return run(() => messenger.sgmail.openTool(\"addressBook\"));",
+  "why": "Ctrl+3 opening Thunderbird's address book"
+ },
+ {
+  "name": "people-group-members",
+  "gate": "people-gate.py",
+  "file": "ui/js/people.js",
+  "find": "        for (const m of chosen) await messenger.addressBooks.mailingLists.addMember(id, m);\n",
+  "replace": "",
+  "why": "a new group without its members"
+ },
+ {
+  "name": "people-org",
+  "gate": "people-gate.py",
+  "file": "ui/js/vcard.js",
+  "find": "if (c.company) out.push(\"ORG:\" + escapeValue(c.company));",
+  "replace": "",
+  "why": "the company not saved"
+ },
+ {
+  "name": "views-bottom",
+  "gate": "views-gate.py",
+  "file": "ui/js/main.js",
+  "find": "mod.classList.toggle(\"rp-bottom\", pos === \"bottom\");",
+  "replace": "mod.classList.toggle(\"rp-bottom\", false);",
+  "why": "Reading Pane: Bottom leaving it on the right"
+ },
+ {
+  "name": "views-remember",
+  "gate": "views-gate.py",
+  "file": "ui/js/main.js",
+  "find": "if (remember) messenger.storage.local.set({ readingPane: pos }).catch(() => {});",
+  "replace": "",
+  "why": "the reading pane's place forgotten"
+ },
+ {
+  "name": "views-compact",
+  "gate": "views-gate.py",
+  "file": "ui/js/msglist.js",
+  "find": "const rh = this.compact ? COMPACT_H : ROW_H;",
+  "replace": "const rh = ROW_H;",
+  "why": "two-line rows with the reading pane at the bottom"
+ },
+ {
+  "name": "views-junk",
+  "gate": "views-gate.py",
+  "file": "ui/js/mail.js",
+  "find": "const skip = kind === \"unread\" ? [\"trash\", \"junk\", \"sent\", \"drafts\", \"outbox\", \"templates\"] : [\"trash\", \"junk\"];",
+  "replace": "const skip = [];",
+  "why": "Junk in the Search Folders"
+ },
+ {
+  "name": "views-search-sync",
+  "gate": "views-gate.py",
+  "file": "ui/js/mail.js",
+  "find": "    await this.syncFolders([...this.folders.folders.values()].filter(f => !skip.includes(roleOf(f))));\n",
+  "replace": "",
+  "why": "Search Folders missing folders not opened yet"
+ },
+ {
+  "name": "views-category",
+  "gate": "views-gate.py",
+  "file": "ui/js/mail.js",
+  "find": "      else if (on) tags.push(key);\n",
+  "replace": "",
+  "why": "Categorize not putting the category on"
+ },
+ {
+  "name": "views-tags-permission",
+  "gate": "views-gate.py",
+  "file": "manifest.json",
+  "find": "\"messagesTags\", \"messagesTagsList\", ",
+  "replace": "\"messagesTags\", ",
+  "why": "no categories to choose (tags not listable)"
+ },
+ {
+  "name": "views-rule",
+  "gate": "views-gate.py",
+  "file": "experiments/parent.js",
+  "find": "          list.insertFilterAt(0, filter);\n",
+  "replace": "",
+  "why": "no rule for the sender's next message"
+ },
+ {
+  "name": "actions-sendreceive",
+  "gate": "actions-gate.py",
+  "file": "experiments/parent.js",
+  "find": "          try {\n            win.SendUnsentMessages();\n          } catch (e) {\n            console.error(\"sg-mail: send unsent\", e);\n          }",
+  "replace": "          win.SendUnsentMessages();",
+  "why": "Send/Receive reporting an error when there is no Outbox yet"
  }
 ]

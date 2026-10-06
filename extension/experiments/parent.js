@@ -104,6 +104,58 @@ function myIdentityEmails() {
   return new Set(MailServices.accounts.allIdentities.map(i => (i.email || "").toLowerCase()));
 }
 
+// ---- the Focused Inbox's people ------------------------------------------------------------
+
+// the addresses this person has written to (their Sent folders) or replied
+// to (their Inboxes), looked at again at most once a minute
+let correspondents = { at: 0, set: new Set() };
+
+function emailsIn(text) {
+  if (!text) return [];
+  return (MailServices.headerParser.extractHeaderAddressMailboxes(text) || "").split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+}
+
+function knownCorrespondents() {
+  if (Date.now() - correspondents.at < 60000) return correspondents.set;
+  const set = new Set();
+  for (const folder of MailServices.accounts.allFolders) {
+    const sent = folder.getFlag(Ci.nsMsgFolderFlags.SentMail);
+    const inbox = folder.getFlag(Ci.nsMsgFolderFlags.Inbox);
+    if (!sent && !inbox) continue;
+    let db;
+    try {
+      db = folder.msgDatabase;
+    } catch (e) {
+      continue;
+    }
+    if (!db) continue;
+    let n = 0;
+    try {
+      for (const hdr of db.enumerateMessages()) {
+        if (++n > 20000) break;
+        if (sent) {
+          for (const e of emailsIn(hdr.recipients)) set.add(e);
+          for (const e of emailsIn(hdr.ccList)) set.add(e);
+        } else if (hdr.flags & Ci.nsMsgMessageFlags.Replied) {
+          for (const e of emailsIn(hdr.author)) set.add(e);
+        }
+      }
+    } catch (e) {
+      console.error("sg-mail: correspondents", folder.name, e);
+    }
+  }
+  correspondents = { at: Date.now(), set };
+  return set;
+}
+
+function hasContact(email) {
+  try {
+    return !!MailServices.ab.cardForEmailAddress(email);
+  } catch (e) {
+    return false;
+  }
+}
+
 function eventObject(item, calendar) {
   const parent = item.parentItem && item.parentItem !== item ? item.parentItem : item;
   const start = item.startDate;
@@ -371,15 +423,25 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
           const win = mainWindow();
           if (!win) return false;
           if (Services.io.offline) return false;
-          win.MsgGetMessagesForAllServers(null);
+          // each step on its own: one failing (an account that cannot be
+          // reached) does not stop the others
+          try {
+            win.MsgGetMessagesForAllServers(null);
+          } catch (e) {
+            console.error("sg-mail: get messages", e);
+          }
           if (folderId) {
             try {
               folderOf(folderId).updateFolder(win.msgWindow);
             } catch (e) {
-              console.error(e);
+              console.error("sg-mail: update folder", e);
             }
           }
-          win.SendUnsentMessages();
+          try {
+            win.SendUnsentMessages();
+          } catch (e) {
+            console.error("sg-mail: send unsent", e);
+          }
           return true;
         },
 
@@ -600,6 +662,75 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
           }));
         },
 
+        // what the Focused Inbox decides by, message by message: the
+        // sender, whether SG Mail's person knows them (a contact, someone
+        // they have written or replied to, themselves) and whether the
+        // message is bulk mail (a mailing list's or a sender's newsletter
+        // headers, kept in the message database: mailnews.customDBHeaders)
+        async focusInfo(ids, fresh = false) {
+          if (fresh) correspondents.at = 0;
+          const known = knownCorrespondents();
+          const mine = myIdentityEmails();
+          const out = [];
+          for (const id of ids) {
+            let hdr;
+            try {
+              hdr = msgHdr(id);
+            } catch (e) {
+              continue;
+            }
+            const email = (MailServices.headerParser.extractHeaderAddressMailboxes(hdr.mime2DecodedAuthor || hdr.author) || "").split(",")[0].trim().toLowerCase();
+            let knownBy = "";
+            if (mine.has(email)) knownBy = "me";
+            else if (email && hasContact(email)) knownBy = "contact";
+            else if (known.has(email)) knownBy = "correspondent";
+            else if (hdr.flags & Ci.nsMsgMessageFlags.Replied) knownBy = "correspondent";
+            let bulk = "";
+            const prop = n => hdr.getStringProperty(n) || "";
+            const precedence = prop("precedence").toLowerCase();
+            const auto = prop("auto-submitted").toLowerCase();
+            if (prop("list-unsubscribe")) bulk = "list-unsubscribe";
+            else if (prop("list-id")) bulk = "list-id";
+            else if (/^(bulk|list|junk)$/.test(precedence)) bulk = "precedence";
+            else if (auto && auto !== "no") bulk = "auto-submitted";
+            else if (prop("feedback-id")) bulk = "feedback-id";
+            else if (/^(no-?reply|do-?not-?reply|newsletters?|news|notifications?|notify|marketing|promotions?|mailer-daemon|bounces?)([+._-]|@)/.test(email)) bulk = "automated sender";
+            out.push({ id, email, known: knownBy, bulk });
+          }
+          return out;
+        },
+
+        // Outlook's Rules > Always Move Messages From: a Thunderbird filter
+        // on the account, run on new mail
+        async createMoveRule(folderId, email, targetFolderId) {
+          const folder = folderOf(folderId);
+          const target = folderOf(targetFolderId);
+          const list = folder.server.getFilterList(null);
+          const name = `Always move messages from ${email}`;
+          for (let i = 0; i < list.filterCount; i++) {
+            if (list.getFilterAt(i).filterName === name) list.removeFilterAt(i--);
+          }
+          const filter = list.createFilter(name);
+          const term = filter.createTerm();
+          term.attrib = Ci.nsMsgSearchAttrib.Sender;
+          term.op = Ci.nsMsgSearchOp.Contains;
+          term.booleanAnd = true;
+          const value = term.value;
+          value.attrib = Ci.nsMsgSearchAttrib.Sender;
+          value.str = email;
+          term.value = value;
+          filter.appendTerm(term);
+          const action = filter.createAction();
+          action.type = Ci.nsMsgFilterAction.MoveToFolder;
+          action.targetFolderUri = target.URI;
+          filter.appendAction(action);
+          filter.filterType = Ci.nsMsgFilterType.InboxRule | Ci.nsMsgFilterType.Manual;
+          filter.enabled = true;
+          list.insertFilterAt(0, filter);
+          list.saveToDefaultFile();
+          return name;
+        },
+
         async remoteContentAllowed(email) {
           // Thunderbird's own list of senders whose pictures may load
           if (!email) return false;
@@ -726,6 +857,57 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
             lazy.cal.itip.checkAndSend(Ci.calIOperationListener.DELETE, item, null, { responseMode: Ci.calIItipItem.AUTO });
           }
           return true;
+        },
+
+        // an event dragged to another time or day, or made longer or
+        // shorter: only its times change. An occurrence of a series becomes
+        // an exception to it, or the whole series moves by as much as the
+        // occurrence moved (a weekly series follows to its new weekday).
+        async moveEvent(calendarId, id, occurrence, change, options = {}) {
+          const calendar = calendarById(calendarId);
+          if (calendar.readOnly) throw new ExtensionError("This calendar is read-only.");
+          const old = await masterItem(calendar, id);
+          const allDay = !!(old.startDate && old.startDate.isDate);
+          const setTimes = (item, start, end) => {
+            if (allDay && end <= start) end = start + 86400000;
+            item.startDate = calDateTime(start, allDay);
+            item.endDate = calDateTime(end, allDay);
+            // Thunderbird mails the update of items marked so
+            if (options.sendInvitations && item.getAttendees().length > 0) item.setProperty("X-MOZ-SEND-INVITATIONS", "TRUE");
+          };
+          let saved;
+          if (occurrence && old.recurrenceInfo && !options.series) {
+            const occ = old.recurrenceInfo.getOccurrenceFor(calDateTime(occurrence, allDay));
+            if (!occ) throw new ExtensionError("No such occurrence");
+            const exc = occ.clone();
+            setTimes(exc, change.start, change.end);
+            const master = old.clone();
+            if (options.sendInvitations && master.getAttendees().length) master.setProperty("X-MOZ-SEND-INVITATIONS", "TRUE");
+            master.recurrenceInfo.modifyException(exc, true);
+            saved = await calendar.modifyItem(master, old);
+          } else {
+            const item = old.clone();
+            if (occurrence && old.recurrenceInfo) {
+              const from = change.origStart ?? occurrence;
+              const start = jsDate(old.startDate) + (change.start - from);
+              const shift = (new Date(start).getDay() - new Date(jsDate(old.startDate)).getDay() + 7) % 7;
+              setTimes(item, start, start + (change.end - change.start));
+              if (shift) {
+                for (const r of item.recurrenceInfo.getRecurrenceItems()) {
+                  if (!(r instanceof Ci.calIRecurrenceRule)) continue;
+                  const days = r.getComponent("BYDAY");
+                  if (days.length && days.every(d => d >= 1 && d <= 7)) r.setComponent("BYDAY", days.map(d => ((d - 1 + shift) % 7) + 1));
+                }
+              }
+            } else {
+              setTimes(item, change.start, change.end);
+            }
+            saved = await calendar.modifyItem(item, old);
+          }
+          if (options.sendInvitations && saved.getAttendees().length) {
+            lazy.cal.itip.checkAndSend(Ci.calIOperationListener.MODIFY, saved, old, { responseMode: Ci.calIItipItem.AUTO });
+          }
+          return { calendarId: calendar.id, id: saved.id };
         },
 
         async calendarImport(calendarId, ics) {

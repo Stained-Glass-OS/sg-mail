@@ -1,3 +1,39 @@
+sg-mail (0.1.0-3) unstable; urgency=medium
+
+  * Calendar by the mouse: appointments dragged to another time or day and
+    resized by their edges in Day, Work Week and Week, all-day items and
+    Month items dragged and stretched by their right end; an occurrence of a
+    series asks "Just this one / The entire series" (the series follows to
+    its new weekday), a meeting of one's own asks to send the attendees an
+    update; time (or Month days) dragged out and typed on is a new
+    appointment in place (Enter saves, Escape drops; Enter alone opens the
+    appointment window).
+  * Focused Inbox: the Inbox in Focused and Other tabs, decided on this
+    computer (bulk-mail headers kept in Thunderbird's database:
+    mailnews.customDBHeaders; contacts and people written or replied to stay
+    Focused); Move to Focused / Other and Always Move, remembered; View >
+    Show Focused Inbox.
+  * People in SG Mail's window (Ctrl+3, the navigation bar): address books
+    and contact groups, contact list with search, contact card, new and
+    edited contacts (vCards; lines SG Mail does not edit kept) and groups
+    (Thunderbird's mailing lists); Email and Meeting from a card.
+  * View > Reading Pane: Right, Bottom (the list one line a message) or Off,
+    remembered with the splitter's height.
+  * Search Folders (Unread Mail, For Follow Up), Categorize (Thunderbird's
+    tags; the messagesTagsList permission), Rules > Always Move Messages
+    From (a Thunderbird filter).
+  * Send/Receive no longer reports an error when there is no Outbox yet.
+  * Microsoft calendars: Thunderbird 157's hidden Graph calendar is not
+    offered (read-only, title and time only, every time taken as UTC); the
+    README says why.
+  * Gates: caldrag, focused, people, views (new), actions (Send/Receive ends
+    without an error), look (People screenshots, light and dark),
+    mail-read (Filter Email > Unread: the Inbox has the Focused tabs);
+    28 new mutants. All gates pass on Thunderbird 157 (the new ones on
+    Debian's 140 too); all 58 mutants are killed.
+
+ -- Stained Glass OS <dev@stained-glass.example>  Tue, 06 Oct 2026 06:00:00 +0000
+
 sg-mail (0.1.0-2) unstable; urgency=medium
 
   * Runs on Thunderbird 157 (Mozilla's official build, Stained Glass OS's

@@ -145,6 +145,9 @@ export class ReadingPane {
     acts.append(more);
     head.append(h("div", { class: "rp-sender" }, h("div", { class: "avatar", style: `background:${av.color}`, text: av.initials }), who, acts));
 
+    // the message's categories, as Outlook's coloured bar under the header
+    head.append(h("div", { class: "rp-cats", id: "rp-cats" }));
+
     const bars = h("div", { class: "rp-bars" });
     if (st.remoteFound && !st.allowRemote) {
       const bar = h("div", { class: "infobar", id: "rp-remote-bar", html: `${icon("picture", 16)}<span style="flex:1">To help protect your privacy, SG Mail prevented automatic download of some pictures in this message.</span>` });
@@ -192,6 +195,7 @@ export class ReadingPane {
     iframe.addEventListener("load", () => this.wireFrame(iframe));
     frameWrap.append(iframe);
     this.el.replaceChildren(head, bars, invite, st.attachments.length ? atts : "", frameWrap);
+    this.paintCategories();
     this.lastRender = { remoteBlocked: !!(st.remoteFound && !st.allowRemote), html: clean.html };
     if (st.body.calendar) this.renderInvite(invite);
   }
@@ -293,6 +297,13 @@ export class ReadingPane {
     f && f.contentWindow && f.contentWindow.print();
   }
 
+  paintCategories() {
+    const box = this.el.querySelector("#rp-cats");
+    if (!box || !this.message) return;
+    const tags = this.tagsOf ? this.tagsOf(this.message.tags) : [];
+    box.replaceChildren(...tags.map(t => h("span", { class: "rp-cat", style: `--cat:${t.color}`, text: t.tag })));
+  }
+
   dump() {
     if (!this.message) return { empty: true };
     const f = this.el.querySelector("#rp-frame");
@@ -312,6 +323,7 @@ export class ReadingPane {
       text: text.slice(0, 2000),
       images,
       html: this.lastRender ? this.lastRender.html.slice(0, 4000) : "",
+      categories: [...this.el.querySelectorAll(".rp-cat")].map(e => e.textContent),
       invite: this.state.invite ? { method: this.state.invite.method, actions: this.state.invite.actions, label: this.state.invite.label } : null,
       sandbox: f ? f.getAttribute("sandbox") : null,
     };

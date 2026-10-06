@@ -2,19 +2,52 @@
 
 Stained Glass OS's mail and calendar program. Its window is arranged the way
 many office workers know from classic desktop mail clients: a ribbon (Home,
-Send / Receive, Folder, View), the folder pane with Favorites and unread
-counts, the message list grouped by date (Today, Yesterday, Last Week, ...),
-the reading pane, a message window, and a Calendar with Day, Work Week, Week
-and Month views. The keys are the familiar ones (Ctrl+N, Ctrl+R,
-Ctrl+Shift+R, Ctrl+F forward, Ctrl+E search, Ctrl+Q / Ctrl+U read/unread,
-Insert flag, Delete, Backspace archive, Ctrl+Shift+V move, F9 Send/Receive,
-Ctrl+1 / Ctrl+2 Mail / Calendar, Ctrl+Alt+1..4 calendar views).
+Send / Receive, Folder, View), the folder pane with Favorites, unread counts
+and Search Folders, the message list grouped by date (Today, Yesterday, Last
+Week, ...), the reading pane (right, bottom or off), a message window, a
+Calendar with Day, Work Week, Week and Month views, and People. The keys are
+the familiar ones (Ctrl+N, Ctrl+R, Ctrl+Shift+R, Ctrl+F forward, Ctrl+E
+search, Ctrl+Q / Ctrl+U read/unread, Insert flag, Delete, Backspace archive,
+Ctrl+Shift+V move, F9 Send/Receive, Ctrl+1 / Ctrl+2 / Ctrl+3 Mail /
+Calendar / People, Ctrl+Alt+1..4 calendar views).
+
+- **Focused Inbox**: the Inbox in two tabs, Focused and Other. Bulk mail
+  (mailing lists, newsletters, no-reply senders: their List-Unsubscribe,
+  List-Id, Precedence and Auto-Submitted headers) goes to Other; people you
+  know stay Focused (your contacts, people you have written or replied to).
+  Decided on this computer from what Thunderbird keeps; nothing is sent
+  anywhere. Right-click: Move to Focused / Other, or Always Move (the
+  sender's mail from now on). View > Show Focused Inbox turns it off.
+- **Calendar by the mouse**: drag an appointment to another time or day
+  (Day, Work Week, Week, Month), drag its top or bottom edge (or the right
+  end of an all-day or Month item) to change its length; for an occurrence of
+  a series SG Mail asks "Just this one" or "The entire series", for your own
+  meetings whether to send the attendees an update. Drag over free time (or
+  days in Month) and type: a new appointment in place (Enter saves, Escape
+  drops it; Enter without typing opens the appointment window).
+- **People** in SG Mail's own window: the address books and their contact
+  groups, the contact list with search, the contact card (Email, Meeting,
+  Edit, Delete), new and edited contacts and groups. They are Thunderbird's
+  address books (vCards, mailing lists): its own address book shows the same
+  (More > Thunderbird's Address Book).
+- **Reading pane** right, at the bottom (the list one line a message) or
+  off, from View > Reading Pane; remembered, as the splitters are.
+- **Search Folders** (Unread Mail, For Follow Up), **Categorize**
+  (Thunderbird's tags, kept on the server as IMAP keywords), **Rules >
+  Always Move Messages From** (a Thunderbird filter, run on new mail; Manage
+  Rules & Alerts opens Thunderbird's filters).
+
+Not there yet, against the classic desktop client in daily use: Quick Steps,
+conversation view (threads), Clean Up / Ignore conversation, Tasks / To-Do,
+the meeting Scheduling Assistant (free/busy), Automatic Replies (out of
+office: a server feature of Exchange), shared and delegated calendars.
 
 ![SG Mail, light](docs/screenshots/sg-mail-light.png)
 ![SG Mail's calendar, dark](docs/screenshots/sg-mail-calendar-dark.png)
+![People, light](docs/screenshots/sg-mail-people-light.png)
 
-(More in docs/screenshots: the message window, light and dark. The look
-gate takes them against the test servers.)
+(More in docs/screenshots: each light and dark, and the message window. The
+look gate takes them against the test servers.)
 
 ## Thunderbird underneath
 
@@ -44,8 +77,9 @@ Mail's when Thunderbird runs with SG Mail's profile:
   APIs do not reach: taking over the main window, Send/Receive, sending a
   message written in our window (Thunderbird's own sending: SMTP, Sent copy,
   drafts, Outbox), the calendar manager (calendars, events, recurrence,
-  meetings, iTIP accept/decline), and opening Thunderbird's own account setup,
-  account settings and options;
+  meetings, iTIP accept/decline, events moved by the mouse), what the
+  Focused Inbox decides by, rules (Thunderbird's filters), and opening
+  Thunderbird's own account setup, account settings and options;
 - `background.js` -- claims each main window, and turns Thunderbird's own
   message windows (mailto: links, "send to") into ours.
 
@@ -69,11 +103,16 @@ require their administrator to approve Thunderbird once (Microsoft's "admin
 consent"), as for any Thunderbird user.
 
 Calendars of Microsoft accounts: no Thunderbird release synchronises them
-yet (Mozilla is writing Microsoft Graph calendar support; Thunderbird 157
-carries an early, read-only version behind the `calendar.graph.enabled`
-preference, off). Until it ships, subscribe to the calendar's published .ics
-link (Add Network Calendar), or use CalDAV providers. When Mozilla ships it,
-the thunderbird package brings it with the next release.
+yet (Mozilla is writing Microsoft Graph calendar support). Thunderbird 157
+carries an early version behind the `calendar.graph.enabled` preference,
+off; SG Mail does not offer it, not even as a preview: it is read-only, it
+needs a Microsoft 365 mail account set up over Graph, and it fetches only
+each event's title, start and end, taking every time as UTC (Mozilla's own
+note, bug 2058697), so appointments outside UTC would show at the wrong hour;
+no places, attendees, series or reminders. Until Mozilla ships it, subscribe
+to the calendar's published .ics link (Add Network Calendar), or use CalDAV
+providers. When Mozilla ships it, the thunderbird package brings it with the
+next release.
 
 ## Building and testing
 
