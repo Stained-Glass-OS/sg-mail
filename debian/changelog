@@ -1,3 +1,18 @@
+sg-mail (0.1.0-5) unstable; urgency=medium
+
+  * At a fractional display scale (175%, sg-image's GTK with
+    Gdk/SgFractionalScale) SG Mail's page ran off its window's right and
+    bottom edges -- the navigation bar (Mail, Calendar, People) and the
+    status bar not shown -- and every click landed a seventh further right
+    and lower than the pointer (regression walk 2026-10-06, a 2736x1824
+    screen). Our GTK tells programs that scale themselves (Thunderbird)
+    scale 1, and knows Thunderbird by its program name; started as sg-mail
+    (--name) it was taken for an ordinary GTK program and scaled a second
+    time. The launcher now says so: GDK_SG_FRACTIONAL=0. Gate:
+    test/launcher-gate.sh (mutant no-fractional-compat).
+
+ -- Stained Glass OS <dev@stained-glass.example>  Tue, 06 Oct 2026 15:35:49 +0000
+
 sg-mail (0.1.0-4) unstable; urgency=medium
 
   * Conversations: View > Show as Conversations (remembered) groups the

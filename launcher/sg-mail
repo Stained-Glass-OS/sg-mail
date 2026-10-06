@@ -52,4 +52,13 @@ for a in "$@"; do
             exit 0 ;;
     esac
 done
+# Thunderbird draws its window itself and scales by GTK's whole-number
+# factor: sg-image's GTK (gtk-scale, a fractional display scale such as
+# 175%) tells such programs scale 1 and the whole DPI -- it knows Thunderbird
+# by its program name, and started as sg-mail (--name) it took SG Mail for
+# an ordinary GTK program. At 175% SG Mail's page then ran off the window's
+# right and bottom edges (the navigation bar and status bar gone) and every
+# click landed 1/7 further right and lower than the pointer (regression walk
+# 2026-10-06). GDK_SG_FRACTIONAL=0 says what it is.
+export GDK_SG_FRACTIONAL=0
 exec "$TB" --name sg-mail --class sg-mail --profile "$PROFILE" "$@"

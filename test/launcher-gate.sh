@@ -23,6 +23,7 @@ no-policy|cat "${SG_MAIL_POLICY:-/etc/sg-mail/user.js}"|:
 no-profile|--profile "$PROFILE"|
 no-class|--name sg-mail --class sg-mail|
 no-userchrome|cp "$SHARE/userChrome.css"|: cp "$SHARE/userChrome.css"
+no-fractional-compat|export GDK_SG_FRACTIONAL=0|: export GDK_SG_FRACTIONAL=0
 M
     rm -rf "$W"; [ $rc = 0 ] && echo "RESULT: PASS" || echo "RESULT: FAIL"; exit $rc
 fi
@@ -40,6 +41,7 @@ printf 'user_pref("mail.server.default.check_time", 30);\n' > "$W/policy.js"
 cat > "$W/thunderbird" <<'T'
 #!/bin/sh
 printf '%s\n' "$@" > "$SG_GATE_ARGS"
+printf '%s\n' "${GDK_SG_FRACTIONAL-unset}" > "$SG_GATE_ARGS.fractional"
 T
 chmod +x "$W/thunderbird"
 run() { HOME="$W/home" XDG_DATA_HOME="$W/home/.local/share" SG_MAIL_SHARE="$W/share" SG_MAIL_THUNDERBIRD="$W/thunderbird" \
@@ -53,6 +55,7 @@ cmp -s "$P/chrome/userChrome.css" "$HERE/launcher/userChrome.css" && grep -q 'le
 [ "$(tail -n1 "$P/user.js" 2>/dev/null)" = 'user_pref("mail.server.default.check_time", 30);' ] && pass "an administrator's settings come last (they win)" || fail "the policy is not last"
 grep -qx -- "--profile" "$W/args" && grep -qx -- "$P" "$W/args" && pass "Thunderbird starts with SG Mail's profile" || fail "not started with SG Mail's profile: $(tr '\n' ' ' < "$W/args")"
 grep -qx -- "--class" "$W/args" && grep -qx -- "sg-mail" "$W/args" && pass "its window class is sg-mail (the taskbar's icon)" || fail "no window class"
+[ "$(cat "$W/args.fractional" 2>/dev/null)" = 0 ] && pass "GTK is told Thunderbird scales itself (GDK_SG_FRACTIONAL=0: at 175% not scaled twice)" || fail "GDK_SG_FRACTIONAL: $(cat "$W/args.fractional" 2>/dev/null)"
 [ "$(cat "$W/home/.thunderbird/own.default/prefs.js")" = "the person's own profile" ] && [ ! -e "$W/home/.thunderbird/own.default/user.js" ] && pass "the person's own Thunderbird profile is not touched" || fail "own profile touched"
 touch "$P/addonStartup.json.lz4"
 run
