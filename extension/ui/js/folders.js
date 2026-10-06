@@ -189,7 +189,7 @@ export class FolderPane {
     if (!this.accounts.length) {
       frag.append(h("div", { style: "padding:16px 12px;color:var(--muted)" },
         h("p", { text: "No email account is set up yet." }),
-        h("button", { class: "btn primary", text: "Add Account…", onclick: () => messenger.sgmail.openTool("accountSetup") })));
+        h("button", { class: "btn primary", text: "Add Account…", onclick: () => (window.sgmail ? window.sgmail.microsoft.addAccount() : messenger.sgmail.openTool("accountSetup")) })));
     }
     this.el.replaceChildren(frag);
     this.markSelected();

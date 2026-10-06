@@ -43,7 +43,9 @@ from marionette import Marionette  # noqa: E402
 IMAP_PORT, IMAPS_PORT, SMTP_PORT, CALDAV_PORT, HTTP_PORT, MARIONETTE_PORT = 10143, 10993, 10025, 15232, 18080, 12828
 SIEVE_PORT = 14190
 USERS = {"alice@example.test": ("Alice Example", "alice-secret"), "bob@example.test": ("Bob Builder", "bob-secret"),
-         "carol@autoconf.test": ("Carol Autoconf", "carol-secret")}
+         "carol@autoconf.test": ("Carol Autoconf", "carol-secret"),
+         # a Microsoft account's address (Outlook.com): the DavMail gates
+         "megan@outlook.com": ("Megan Bowen", "megan-secret")}
 EXT_ID = "sg-mail@stained-glass-os.org"
 
 
@@ -94,7 +96,12 @@ class Env:
         self.name = name
         # SG_GATE_TAG: runs of one gate side by side (the mutants) keep apart
         tag = os.environ.get("SG_GATE_TAG", "")
-        self.dir = f"/var/tmp/sgmail/gates/{name}" + (f"-{tag}" if tag else "")
+        if len(tag) > 12:
+            # a short one: Dovecot's sockets live under the gate's directory,
+            # and a socket's path has at most 107 bytes
+            import hashlib
+            tag = tag[:4] + hashlib.sha1(tag.encode()).hexdigest()[:6]
+        self.dir = os.path.join(os.environ.get("SG_AREA", "/var/tmp/sgmail"), "gates", name + (f"-{tag}" if tag else ""))
         if os.path.exists(self.dir):
             shutil.rmtree(self.dir)
         os.makedirs(self.dir)
@@ -275,6 +282,56 @@ postmaster_address = postmaster@example.test
         r = c.getresponse()
         data = r.read()
         return r.status, data.decode("utf-8", "replace")
+
+    def make_davmail_collections(self, user="megan@outlook.com"):
+        """The calendar and address book a DavMail stand-in passes on to:
+        Radicale's /USER/calendar/ and /USER/contacts/."""
+        st1, _ = self.dav("MKCALENDAR", f"/{user}/calendar/", '<?xml version="1.0" encoding="utf-8"?><C:mkcalendar xmlns:D="DAV:" '
+                          'xmlns:C="urn:ietf:params:xml:ns:caldav"><D:set><D:prop><D:displayname>Calendar</D:displayname></D:prop></D:set></C:mkcalendar>', user=user)
+        st2, _ = self.dav("MKCOL", f"/{user}/contacts/", '<?xml version="1.0" encoding="utf-8"?><D:mkcol xmlns:D="DAV:" '
+                          'xmlns:CR="urn:ietf:params:xml:ns:carddav"><D:set><D:prop><D:resourcetype><D:collection/><CR:addressbook/></D:resourcetype>'
+                          '<D:displayname>Contacts</D:displayname></D:prop></D:set></D:mkcol>', user=user)
+        return st1, st2
+
+    def collection_files(self, user, coll, ext):
+        d = os.path.join(self.dir, "radicale/collections/collection-root", user, coll)
+        return [open(os.path.join(d, n)).read() for n in sorted(os.listdir(d)) if n.endswith(ext)] if os.path.isdir(d) else []
+
+    # ---- a systemd user manager of the gate's own (SG_NONET=lan: build/inroot.sh) ----------
+
+    def user_env(self, extra=None):
+        """The environment Thunderbird and the user manager share."""
+        # the runtime directory in the sandbox's own /tmp (systemd leaves
+        # unreadable directories in it)
+        env = dict(os.environ, HOME=os.path.join(self.dir, "home"), XDG_RUNTIME_DIR=f"/tmp/run-{os.path.basename(self.dir)}")
+        env.pop("XDG_CONFIG_HOME", None)
+        env.update(extra or {})
+        return env
+
+    def start_user_manager(self, extra=None):
+        env = self.user_env(extra)
+        os.makedirs(env["XDG_RUNTIME_DIR"], mode=0o700, exist_ok=True)
+        os.makedirs(env["HOME"], exist_ok=True)
+        os.makedirs("/run/systemd/system", exist_ok=True)     # "booted with systemd" (the root's /run is the gate's)
+        p = subprocess.Popen(["/usr/lib/systemd/systemd", "--user"], env=env, stdout=open(os.path.join(self.dir, "systemd-user.log"), "w"),
+                             stderr=subprocess.STDOUT)
+        self.procs.append(p)
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            if subprocess.run(["systemctl", "--user", "is-system-running"], env=env, capture_output=True).returncode in (0, 1) and \
+                    os.path.exists(os.path.join(env["XDG_RUNTIME_DIR"], "systemd/private")):
+                return p
+            time.sleep(0.3)
+        raise RuntimeError("the systemd user manager did not come up")
+
+    def systemctl(self, *args):
+        r = subprocess.run(["systemctl", "--user", *args], env=self.user_env(), capture_output=True, text=True)
+        return r.stdout.strip()
+
+    def x_windows(self, name):
+        """The X windows on the gate's display whose title has NAME."""
+        r = subprocess.run(["xdotool", "search", "--name", name], env=dict(os.environ, DISPLAY=":91"), capture_output=True, text=True)
+        return r.stdout.split()
 
     def caldav_events(self, user="alice@example.test", cal="work"):
         """The .ics objects in a CalDAV calendar, as the server keeps them."""
@@ -484,8 +541,7 @@ postmaster_address = postmaster@example.test
         self.xvfb = subprocess.Popen(["Xvfb", ":91", "-screen", "0", "1600x1000x24", "-nolisten", "tcp"], stderr=subprocess.DEVNULL)
         time.sleep(0.8)
         self.procs.append(self.xvfb)
-        env = dict(os.environ, DISPLAY=":91", SG_MAIL_TEST_OUT=self.out, MOZ_CRASHREPORTER_DISABLE="1", TZ="UTC", LANG="C.UTF-8",
-                   XDG_RUNTIME_DIR=os.path.join(self.dir, "run"), HOME=os.path.join(self.dir, "home"))
+        env = dict(self.user_env(), DISPLAY=":91", SG_MAIL_TEST_OUT=self.out, MOZ_CRASHREPORTER_DISABLE="1", TZ="UTC", LANG="C.UTF-8")
         os.makedirs(env["XDG_RUNTIME_DIR"], mode=0o700, exist_ok=True)
         os.makedirs(env["HOME"], exist_ok=True)
         env.update(mutant_env or {})

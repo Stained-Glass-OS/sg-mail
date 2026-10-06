@@ -1,3 +1,51 @@
+sg-mail (0.1.0-6) unstable; urgency=medium
+
+  * Microsoft accounts through DavMail (sg-davmail, a new dependency):
+    mail, calendars and contacts of Outlook.com, Hotmail, Live and
+    Microsoft 365 accounts, read and written, with one sign-in in DavMail's
+    own window -- no Thunderbird release reads or writes Microsoft calendars
+    yet. File > Add Account (and the first start) asks the address first: a
+    Microsoft one (its domain, or MX at Microsoft 365) is connected through
+    DavMail (Thunderbird's IMAP and SMTP account, CalDAV calendar and
+    CardDAV address book on the gateway); any other, or "Use Thunderbird's
+    account setup", goes to Thunderbird's own setup with the address typed
+    in. An account Thunderbird set up itself (EWS, Graph, IMAP at
+    Microsoft) is offered "Calendar and contacts (Microsoft)" (also
+    Calendar > Add calendar).
+  * The gateway: one per account, the systemd user service
+    sg-mail-davmail@NAME (/usr/lib/sg-mail/sg-mail-davmail), on 127.0.0.1
+    only, for that address only, settings and DavMail's token private
+    (0700/0600); the service only uses DavMail's stored token and never
+    opens a sign-in window; the sign-in is a short-lived DavMail of its own.
+    /usr/bin/sg-mail starts the gateways. The Calendar's side pane says when
+    one is not running (Start), needs DavMail's sign-in again (Sign in
+    again) or cannot reach Microsoft. Removing the account removes its
+    gateway, token, calendar, address book, passwords and outgoing server.
+  * Works on Debian's Thunderbird 140 as on 157 (an incoming server's host,
+    password removal: both versions' interfaces).
+  * A new account's Inbox is shown once its server has listed it.
+  * Open Shared Calendar through a Microsoft account's gateway (DavMail's
+    /users/THEIR-ADDRESS/calendar/): the address kept as the server writes
+    it (Thunderbird 140 wrote %40 and then showed none of the calendar's
+    events); such calendars go with the account. The Scheduling Assistant's
+    server free/busy reaches DavMail's CalDAV outbox (Graph getSchedule);
+    Automatic Replies stay client-side for these accounts (DavMail does not
+    offer Exchange's).
+  * Gates: davmail (a DavMail stand-in in front of Radicale: offer, sign-in,
+    user service, appointments created, dragged and deleted, contacts,
+    Start, Sign in again, Cancel, removal), davmail-mail (the whole account
+    through DavMail: mail in, mail out, one Sent copy, calendar, contacts),
+    davmail-service (the real DavMail: its sign-in window and Cancel, the
+    service on the loopback only, "Sign in again"); all on 140 and 157,
+    with 18 mutants, all killed. The test root (root-tb-r3) has DavMail's
+    runtime and systemd;
+    build/inroot.sh: SG_NONET=lan (a network card that leads nowhere) and
+    SG_STAGE (the packages laid over /usr); make stage. look: SG Mail's
+    own account step before Thunderbird's setup. launcher: the gateways
+    started (mutant).
+
+ -- Stained Glass OS <dev@stained-glass.example>  Tue, 06 Oct 2026 19:30:00 +0000
+
 sg-mail (0.1.0-5) unstable; urgency=medium
 
   * At a fractional display scale (175%, sg-image's GTK with

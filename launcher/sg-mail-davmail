@@ -1,0 +1,265 @@
+#!/bin/sh
+# SG Mail's Microsoft accounts: DavMail (package sg-davmail) as a gateway on
+# this computer, one per Microsoft account, run as the systemd user service
+# sg-mail-davmail@NAME. Thunderbird's own clients use it: CalDAV and CardDAV
+# at http://127.0.0.1:PORT/users/EMAIL/{calendar,contacts}/, and -- for an
+# account SG Mail sets up through DavMail entirely -- IMAP and SMTP.
+#
+#   sg-mail-davmail setup NAME KIND EMAIL [EWS_URL] [--mail]
+#                       write NAME's settings; prints port=N (CalDAV and
+#                       CardDAV) and, with --mail, imap=N and smtp=N. KIND:
+#                       microsoft (Microsoft 365, Outlook.com: Microsoft
+#                       Graph) or exchange (an Exchange server's EWS_URL;
+#                       its own password).
+#   sg-mail-davmail start NAME      start the gateway (the user service)
+#   sg-mail-davmail start-all       start every configured gateway
+#   sg-mail-davmail stop NAME
+#   sg-mail-davmail status NAME     active | inactive | missing
+#   sg-mail-davmail signin NAME     a sign-in gateway in the foreground, on a
+#                       port of its own (printed: port=N): its first request
+#                       opens DavMail's sign-in window; the token DavMail gets
+#                       goes to NAME's token file, which the service reads.
+#   sg-mail-davmail remove NAME     stop it, forget it (settings and token)
+#   sg-mail-davmail run NAME        the service's own command (ExecStart)
+#
+# The Microsoft sign-in is entirely DavMail's: its window, its OAuth
+# registration, its token cache (DavMail encrypts the refresh token with the
+# password the calendar program gives it, which SG Mail makes up for each
+# account and keeps in Thunderbird's password manager). Nothing here sees a
+# Microsoft password or token.
+#
+# Safety: the gateway listens on 127.0.0.1 only and refuses other addresses
+# (davmail.allowRemote=false), serves only that account's address
+# (davmail.userWhiteList), and the always-running service never opens a
+# sign-in window: it only uses the stored token
+# (O365StoredTokenAuthenticator), so another local user's connection cannot
+# make a sign-in window appear on this person's screen. Settings and token
+# are this user's only (directory 0700, files 0600). Ports are this user's
+# block: 10000 + (uid mod 1000) * 20, twenty of them (0-14 the services'
+# CalDAV, IMAP and SMTP, 15-19 sign-in), below the kernel's ephemeral range.
+#
+# Environment: SG_DAVMAIL (DavMail's launcher, default sg-davmail),
+# SG_MAIL_DAVMAIL_NO_SYSTEMD=1 (no user service manager: a background
+# process with a pid file instead -- also used when none answers).
+#
+# Copyright (C) 2026 Stained Glass OS contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+set -eu
+BASE=${XDG_CONFIG_HOME:-$HOME/.config}/sg-mail/davmail
+DAVMAIL=${SG_DAVMAIL:-sg-davmail}
+UNIT=sg-mail-davmail
+
+die() { echo "sg-mail-davmail: $*" >&2; exit 1; }
+valid_name() { case $1 in ''|*[!A-Za-z0-9._-]*|.*) die "bad name '$1'" ;; esac; }
+dir_of() { echo "$BASE/$1"; }
+
+# a port of this user's block that nothing listens on, no other gateway of
+# this user has and is not in TAKEN: block offset FIRST..LAST
+free_port() {
+    first=$1; last=$2; taken=${3:-}
+    blk=$(( 10000 + ($(id -u) % 1000) * 20 ))
+    i=$first
+    while [ "$i" -le "$last" ]; do
+        p=$((blk + i))
+        if ! grep -qsxE "davmail\.(caldav|imap|smtp)Port=$p" "$BASE"/*/davmail.properties \
+           && ! case " $taken " in *" $p "*) true ;; *) false ;; esac \
+           && ! port_busy "$p"; then
+            echo "$p"; return 0
+        fi
+        i=$((i + 1))
+    done
+    return 1
+}
+port_busy() {
+    # (no ss: nothing known to listen; DavMail then fails to bind and says so)
+    command -v ss >/dev/null 2>&1 && [ -n "$(ss -Hltn "sport = :$1" 2>/dev/null)" ]
+}
+
+# DavMail's settings for one gateway:
+#   KIND EMAIL URL PORT IMAPPORT SMTPPORT TOKENFILE LOGFILE SIGNIN(0|1)
+properties() {
+    kind=$1 email=$2 url=$3 port=$4 imap=$5 smtp=$6 tokens=$7 logf=$8 signin=$9
+    bind=127.0.0.1 remote=false
+    if [ "${SG_MUTANT_DAVMAIL_ANY_ADDRESS:-0}" = 1 ]; then bind=; remote=true; fi
+    cat <<EOF
+# SG Mail: DavMail for $email (written by sg-mail-davmail; SG Mail rewrites it)
+davmail.server=true
+davmail.enableTray=false
+davmail.allowRemote=$remote
+davmail.bindAddress=$bind
+davmail.caldavPort=$port
+davmail.imapPort=$imap
+davmail.smtpPort=$smtp
+davmail.popPort=
+davmail.ldapPort=
+davmail.ssl.nosecurecaldav=true
+davmail.ssl.nosecureimap=true
+davmail.ssl.nosecuresmtp=true
+davmail.disableUpdateCheck=true
+davmail.exitOnBindFailed=true
+davmail.userWhiteList=$email
+davmail.caldavPastDelay=180
+davmail.imapIdleDelay=1
+davmail.imapAutoExpunge=true
+davmail.smtpSaveInSent=true
+davmail.enableKeepAlive=true
+davmail.logFilePath=$logf
+davmail.logFileSize=1MB
+log4j.rootLogger=WARN
+log4j.logger.davmail=WARN
+log4j.logger.httpclient.wire=WARN
+log4j.logger.org.apache.http=WARN
+EOF
+    case $kind in
+    microsoft)
+        cat <<EOF
+davmail.mode=O365Graph
+davmail.url=https://outlook.office365.com/EWS/Exchange.asmx
+davmail.authentication=O365Interactive
+davmail.oauth.tenantId=common
+davmail.oauth.redirectUri=https://login.microsoftonline.com/common/oauth2/nativeclient
+davmail.oauth.persistToken=true
+davmail.oauth.tokenFilePath=$tokens
+EOF
+        # the service only uses the stored token; the sign-in gateway opens
+        # DavMail's own sign-in window
+        [ "$signin" = 1 ] || [ "${SG_MUTANT_DAVMAIL_INTERACTIVE_SERVICE:-0}" = 1 ] \
+            || echo "davmail.authenticator=davmail.exchange.auth.O365StoredTokenAuthenticator"
+        ;;
+    exchange)
+        cat <<EOF
+davmail.mode=ExchangeEWS
+davmail.url=$url
+EOF
+        ;;
+    esac
+}
+
+have_systemd() {
+    [ "${SG_MAIL_DAVMAIL_NO_SYSTEMD:-0}" != 1 ] && command -v systemctl >/dev/null 2>&1 \
+        && systemctl --user show-environment >/dev/null 2>&1
+}
+
+cmd=${1:-}
+[ $# -gt 0 ] && shift
+case $cmd in
+setup)
+    mail=0; set -- "$@" --end
+    while [ "$1" != --end ]; do
+        if [ "$1" = --mail ]; then mail=1; else set -- "$@" "$1"; fi
+        shift
+    done
+    shift
+    [ $# -ge 3 ] || die "usage: setup NAME KIND EMAIL [EWS_URL] [--mail]"
+    name=$1 kind=$2 email=$3 url=${4:-}
+    valid_name "$name"
+    case $email in *@*.*) ;; *) die "bad address '$email'" ;; esac
+    case $email in *[!A-Za-z0-9.@_+-]*) die "bad address '$email'" ;; esac
+    case $kind in
+        microsoft) url= ;;
+        exchange) case $url in https://*/*) ;; *) die "exchange needs the server's https EWS address" ;; esac
+                  case $url in *[!A-Za-z0-9.:/_~%-]*) die "bad EWS address" ;; esac ;;
+        *) die "kind must be microsoft or exchange" ;;
+    esac
+    d=$(dir_of "$name")
+    umask 077
+    mkdir -p "$d"
+    chmod 0700 "$BASE" "$d"
+    # the ports it has keep (Thunderbird's accounts point at them)
+    old() { sed -n "s/^davmail.$1Port=//p" "$d/davmail.properties" 2>/dev/null || true; }
+    port=$(old caldav); imap=; smtp=
+    [ -n "$port" ] || port=$(free_port 0 14) || die "no free port in this user's block"
+    if [ "$mail" = 1 ]; then
+        imap=$(old imap); smtp=$(old smtp)
+        [ -n "$imap" ] || imap=$(free_port 0 14 "$port") || die "no free port in this user's block"
+        [ -n "$smtp" ] || smtp=$(free_port 0 14 "$port $imap") || die "no free port in this user's block"
+    fi
+    properties "$kind" "$email" "$url" "$port" "$imap" "$smtp" "$d/tokens" "$d/davmail.log" 0 > "$d/davmail.properties.new"
+    printf '%s\n%s\n%s\n%s\n' "kind=$kind" "email=$email" "url=$url" "mail=$mail" > "$d/account"
+    mv "$d/davmail.properties.new" "$d/davmail.properties"
+    chmod 0600 "$d/davmail.properties" "$d/account"
+    echo "port=$port"
+    [ "$mail" = 0 ] || printf 'imap=%s\nsmtp=%s\n' "$imap" "$smtp"
+    ;;
+run)
+    name=${1:-}; valid_name "$name"
+    d=$(dir_of "$name")
+    [ -f "$d/davmail.properties" ] || die "$name is not set up"
+    umask 077
+    exec "$DAVMAIL" "$d/davmail.properties" -notray -server
+    ;;
+start)
+    name=${1:-}; valid_name "$name"
+    [ -f "$(dir_of "$name")/davmail.properties" ] || die "$name is not set up"
+    if have_systemd; then
+        systemctl --user start "$UNIT@$name.service"
+    else
+        d=$(dir_of "$name")
+        if [ -f "$d/pid" ] && kill -0 "$(cat "$d/pid")" 2>/dev/null; then exit 0; fi
+        umask 077
+        nohup "$0" run "$name" > "$d/service.out" 2>&1 &
+        echo $! > "$d/pid"
+    fi
+    ;;
+start-all)
+    for f in "$BASE"/*/davmail.properties; do
+        [ -f "$f" ] || continue
+        n=$(basename "$(dirname "$f")")
+        "$0" start "$n" || echo "sg-mail-davmail: could not start $n" >&2
+    done
+    ;;
+stop)
+    name=${1:-}; valid_name "$name"
+    d=$(dir_of "$name")
+    if have_systemd; then
+        systemctl --user stop "$UNIT@$name.service" 2>/dev/null || true
+    fi
+    if [ -f "$d/pid" ]; then
+        kill "$(cat "$d/pid")" 2>/dev/null || true
+        rm -f "$d/pid"
+    fi
+    ;;
+status)
+    name=${1:-}; valid_name "$name"
+    d=$(dir_of "$name")
+    [ -f "$d/davmail.properties" ] || { echo missing; exit 0; }
+    if have_systemd; then
+        if systemctl --user is-active --quiet "$UNIT@$name.service"; then echo active; else echo inactive; fi
+    elif [ -f "$d/pid" ] && kill -0 "$(cat "$d/pid")" 2>/dev/null; then
+        echo active
+    else
+        echo inactive
+    fi
+    ;;
+signin)
+    name=${1:-}; valid_name "$name"
+    d=$(dir_of "$name")
+    [ -f "$d/account" ] || die "$name is not set up"
+    kind=$(sed -n 's/^kind=//p' "$d/account")
+    email=$(sed -n 's/^email=//p' "$d/account")
+    [ "$kind" = microsoft ] || die "$name signs in with its password, not a sign-in window"
+    port=$(free_port 15 19) || die "no free port for the sign-in"
+    umask 077
+    properties "$kind" "$email" "" "$port" "" "" "$d/tokens" "$d/signin.log" 1 > "$d/signin.properties"
+    echo "port=$port"
+    # SG Mail ends it (SIGTERM) once the sign-in is done or given up; the
+    # sign-in settings go with it
+    "$DAVMAIL" "$d/signin.properties" -notray -server &
+    pid=$!
+    trap 'kill "$pid" 2>/dev/null; rm -f "$d/signin.properties"; exit 0' INT TERM HUP
+    rc=0; wait "$pid" || rc=$?
+    rm -f "$d/signin.properties"
+    exit "$rc"
+    ;;
+remove)
+    name=${1:-}; valid_name "$name"
+    "$0" stop "$name"
+    if have_systemd; then
+        systemctl --user reset-failed "$UNIT@$name.service" 2>/dev/null || true
+    fi
+    rm -rf "$(dir_of "$name")"
+    ;;
+*)
+    die "usage: setup|start|start-all|stop|status|signin|remove|run NAME ..."
+    ;;
+esac

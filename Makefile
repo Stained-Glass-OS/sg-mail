@@ -24,7 +24,7 @@ PREFIX  ?= /usr
 TB_DEB  ?=
 # ROOT_REV: a new name whenever build/mkroot.sh's packages change (an older
 # root stays usable for checkouts that still want it)
-ROOT_REV = r2
+ROOT_REV = r3
 ifneq ($(TB_DEB),)
 ROOT    ?= /var/tmp/sgmail/root-tb-$(ROOT_REV)-$(shell dpkg-deb -f $(TB_DEB) Version | tr : _)
 else
@@ -32,9 +32,15 @@ ROOT    ?= /var/tmp/sgmail/root-tb-$(ROOT_REV)
 endif
 PY      ?= python3
 GATES   ?= $(sort $(wildcard test/gate/*-gate.py))
-INROOT   = SG_NONET=1 SG_ROOT=$(ROOT) SG_CWD=$(CURDIR) sh build/inroot.sh
+# the package as installed (make stage), laid over the test root's /usr; with
+# DavMail (sg-image's sg-davmail package: SG_DAVMAIL_DEB) for the davmail gates
+STAGE   ?= $(CURDIR)/build/stage
+SG_DAVMAIL_DEB ?= $(lastword $(sort $(wildcard ../sg-image/build/davmail-deb/sg-davmail_*_all.deb)))
+# the davmail gates: a network card that leads nowhere (DavMail tells "no
+# network" from "not signed in" by it) and a systemd user manager of their own
+INROOT   = SG_NONET=$$(case $$g in *davmail*) echo lan;; *) echo 1;; esac) SG_STAGE=$(STAGE) SG_ROOT=$(ROOT) SG_CWD=$(CURDIR) sh build/inroot.sh
 
-.PHONY: all xpi install lint test test-mutation deb root clean
+.PHONY: all xpi install lint test test-mutation deb root clean stage
 all: xpi
 
 xpi:
@@ -48,6 +54,8 @@ install: xpi
 	install -D -m0644 $(XPI) $(DESTDIR)$(PREFIX)/share/sg-mail/$(EXT_ID).xpi
 	install -D -m0644 launcher/user.js $(DESTDIR)$(PREFIX)/share/sg-mail/user.js
 	install -D -m0644 launcher/userChrome.css $(DESTDIR)$(PREFIX)/share/sg-mail/userChrome.css
+	install -D -m0755 launcher/sg-mail-davmail $(DESTDIR)$(PREFIX)/lib/sg-mail/sg-mail-davmail
+	install -D -m0644 data/sg-mail-davmail@.service $(DESTDIR)$(PREFIX)/lib/systemd/user/sg-mail-davmail@.service
 	install -D -m0644 data/sg-mail.desktop $(DESTDIR)$(PREFIX)/share/applications/sg-mail.desktop
 	install -D -m0644 data/sg-mail.svg $(DESTDIR)$(PREFIX)/share/icons/hicolor/scalable/apps/sg-mail.svg
 	for d in data/icons/*x*; do install -D -m0644 $$d/sg-mail.png $(DESTDIR)$(PREFIX)/share/icons/hicolor/$$(basename $$d)/apps/sg-mail.png; done
@@ -55,6 +63,9 @@ install: xpi
 
 lint:
 	@sh -n launcher/sg-mail
+	@sh -n launcher/sg-mail-davmail
+	@if command -v shellcheck >/dev/null; then shellcheck -s sh launcher/sg-mail-davmail build/inroot.sh; fi
+	@SYSTEMD_LOG_LEVEL=err systemd-analyze --user verify --man=no --recursive-errors=no data/sg-mail-davmail@.service 2>&1 | grep -v 'Command /usr/lib/sg-mail/sg-mail-davmail is not executable' | grep . && exit 1 || :
 	@for f in build/*.sh test/*.sh; do [ ! -f "$$f" ] || sh -n "$$f" || exit 1; done
 	@node --check extension/background.js
 	@node --check extension/experiments/parent.js
@@ -71,14 +82,20 @@ $(ROOT)/usr/bin/thunderbird:
 	sh build/mkroot.sh $(ROOT) $(TB_DEB)
 root: $(ROOT)/usr/bin/thunderbird
 
+stage: xpi
+	@rm -rf $(STAGE)
+	@$(MAKE) -s install DESTDIR=$(STAGE) >/dev/null
+	@if [ -n "$(SG_DAVMAIL_DEB)" ]; then dpkg-deb -x $(SG_DAVMAIL_DEB) $(STAGE); \
+	  else echo "no sg-davmail package (SG_DAVMAIL_DEB; sg-image: make davmail-pkg): the davmail gates will fail"; fi
+
 # the gates run the extension packed, as the package installs it
-test: lint xpi root
+test: lint xpi root stage
 	@sh test/launcher-gate.sh
 	@rc=0; for g in $(GATES); do echo "== $$g"; SG_MAIL_EXTENSION=xpi $(INROOT) $(PY) -u $$g || rc=1; done; exit $$rc
 
-test-mutation: xpi root
+test-mutation: xpi root stage
 	@sh test/launcher-gate.sh --mutants
-	@SG_ROOT=$(ROOT) $(PY) test/mutate.py $(GATES)
+	@SG_ROOT=$(ROOT) SG_STAGE=$(STAGE) $(PY) test/mutate.py $(GATES)
 
 deb:
 	dpkg-buildpackage -us -uc -b

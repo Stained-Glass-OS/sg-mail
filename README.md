@@ -161,17 +161,67 @@ with OAuth2 on Microsoft's own login page. Some work or school tenants
 require their administrator to approve Thunderbird once (Microsoft's "admin
 consent"), as for any Thunderbird user.
 
-Calendars of Microsoft accounts: no Thunderbird release synchronises them
-yet (Mozilla is writing Microsoft Graph calendar support). Thunderbird 157
-carries an early version behind the `calendar.graph.enabled` preference,
-off; SG Mail does not offer it, not even as a preview: it is read-only, it
-needs a Microsoft 365 mail account set up over Graph, and it fetches only
-each event's title, start and end, taking every time as UTC (Mozilla's own
-note, bug 2058697), so appointments outside UTC would show at the wrong hour;
-no places, attendees, series or reminders. Until Mozilla ships it, subscribe
-to the calendar's published .ics link (Add Network Calendar), or use CalDAV
-providers. When Mozilla ships it, the thunderbird package brings it with the
-next release.
+## Microsoft accounts: mail, calendar and contacts through DavMail
+
+No Thunderbird release reads or writes Microsoft 365 / Outlook.com /
+Exchange calendars and contacts yet (Mozilla is writing Microsoft Graph
+calendar support; Thunderbird 157 has an early, read-only version behind
+`calendar.graph.enabled`, which SG Mail does not offer: it takes every time
+as UTC, bug 2058697). SG Mail therefore uses **DavMail**
+(davmail.sourceforge.net, GPL-2.0-or-later; the `sg-davmail` package, built
+by sg-image's `davmail/` from upstream's release), a gateway that talks
+Microsoft Graph (or an Exchange server's EWS) and offers IMAP, SMTP, CalDAV
+and CardDAV on this computer. Thunderbird's own IMAP, SMTP, CalDAV and
+CardDAV clients use it, so everything SG Mail does with mail, calendars
+(drag and resize, invitations, reminders) and People works on Microsoft
+accounts, on Debian's Thunderbird 140 as on 157.
+
+- **Adding an account** (File > Add Account, and the first start): SG Mail
+  asks the address first. A Microsoft address (Outlook.com, Hotmail, Live,
+  MSN, or a domain whose mail Microsoft 365 receives: its MX at
+  `*.mail.protection.outlook.com`) is offered **Connect**: DavMail's own
+  sign-in window opens (Microsoft's login page, multi-factor and all), and
+  once signed in SG Mail makes Thunderbird's mail account (IMAP and SMTP on
+  the gateway), the calendar `Calendar (address)` and the address book
+  `Contacts (address)` -- one sign-in for all three. "Use Thunderbird's
+  account setup" (and any other address) goes to Thunderbird's own setup,
+  with the address already typed in: Thunderbird's Exchange (EWS) and
+  Microsoft 365 (Graph) mail stays available that way.
+- **An account added by Thunderbird's own setup** (EWS, Graph or IMAP at
+  Microsoft): SG Mail offers "Calendar and contacts (Microsoft)": the same
+  gateway, for the calendar and contacts only (also Calendar > Add calendar
+  > Microsoft 365, Outlook.com or Exchange). An Exchange server of one's own
+  (EWS at another address) signs in with its password, which Thunderbird
+  asks for once.
+- **The gateway**: one per account, the systemd user service
+  `sg-mail-davmail@NAME` (`/usr/lib/sg-mail/sg-mail-davmail`, which writes
+  DavMail's settings in `~/.config/sg-mail/davmail/NAME/`: directory 0700,
+  files 0600). It listens on 127.0.0.1 only (`davmail.allowRemote=false`,
+  `davmail.bindAddress`), serves only that address
+  (`davmail.userWhiteList`), and never opens a sign-in window itself: it
+  only uses the token DavMail stored (`O365StoredTokenAuthenticator`). The
+  sign-in is a short-lived second DavMail on a port of its own, whose first
+  request opens DavMail's window; SG Mail ends it when the sign-in is done
+  or cancelled. DavMail keeps the refresh token in its token file,
+  encrypted with a password SG Mail makes up for the account and keeps in
+  Thunderbird's password manager (the password Thunderbird gives the
+  gateway). SG Mail never sees a Microsoft password or token, and has no
+  sign-in code of its own. `/usr/bin/sg-mail` starts the gateways; they
+  stop with the session.
+- **When something is wrong** the Calendar's side pane says so, per
+  account: the gateway is not running (Start), DavMail has no valid sign-in
+  ("Sign in again": DavMail's window again), Microsoft cannot be reached.
+- **Removing the account** (Account Settings) removes its gateway, DavMail's
+  settings and token, the calendar, the address book and the passwords.
+
+DavMail's mail path, against Thunderbird's own EWS/Graph mail: folders,
+search (translated to Exchange queries), attachments and flags work as IMAP;
+new mail is polled (IMAP IDLE answered by DavMail checking the folder every
+minute: `davmail.imapIdleDelay=1`) rather than pushed; Graph delta sync
+(DavMail 7) keeps large folders quick; Sent Items is Exchange's own copy
+(`davmail.smtpSaveInSent`; Thunderbird keeps none, so there is no second
+copy). The first sync of a big mailbox goes through the gateway on this
+computer.
 
 ## Building and testing
 
@@ -188,7 +238,11 @@ next release.
     make test-mutation   # every gate against its mutants (test/mutants.json)
 
 The gates (`test/gate/*-gate.py`) run Thunderbird headless (Xvfb) in the test
-root with no network but its own loopback: Dovecot (IMAP; ManageSieve, and
+root with no network but its own loopback (the davmail gates: also a network
+card that leads nowhere, and a systemd user manager of their own; they need
+the `sg-davmail` package, `SG_DAVMAIL_DEB=`, default sg-image's
+`build/davmail-deb/`, laid over the root with SG Mail's package by `make
+stage`): Dovecot (IMAP; ManageSieve, and
 its delivery agent running Sieve), an aiosmtpd SMTP server that delivers
 locally, Radicale (CalDAV, with sharing rights) and a small web server (the
 account-setup lookup, and pictures whose fetches are counted). Nothing ever

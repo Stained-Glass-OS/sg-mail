@@ -24,6 +24,7 @@ no-profile|--profile "$PROFILE"|
 no-class|--name sg-mail --class sg-mail|
 no-userchrome|cp "$SHARE/userChrome.css"|: cp "$SHARE/userChrome.css"
 no-fractional-compat|export GDK_SG_FRACTIONAL=0|: export GDK_SG_FRACTIONAL=0
+no-davmail-start|"$DAVMAIL_HELPER" start-all|: "$DAVMAIL_HELPER" start-all
 M
     rm -rf "$W"; [ $rc = 0 ] && echo "RESULT: PASS" || echo "RESULT: FAIL"; exit $rc
 fi
@@ -44,8 +45,14 @@ printf '%s\n' "$@" > "$SG_GATE_ARGS"
 printf '%s\n' "${GDK_SG_FRACTIONAL-unset}" > "$SG_GATE_ARGS.fractional"
 T
 chmod +x "$W/thunderbird"
+cat > "$W/davmail-helper" <<'T'
+#!/bin/sh
+echo "$@" >> "$SG_GATE_DAVMAIL"
+T
+chmod +x "$W/davmail-helper"
 run() { HOME="$W/home" XDG_DATA_HOME="$W/home/.local/share" SG_MAIL_SHARE="$W/share" SG_MAIL_THUNDERBIRD="$W/thunderbird" \
-        SG_MAIL_POLICY="$W/policy.js" SG_GATE_ARGS="$W/args" DISPLAY=:9 sh "$L" "$@"; }
+        SG_MAIL_POLICY="$W/policy.js" SG_GATE_ARGS="$W/args" SG_MAIL_DAVMAIL_HELPER="$W/davmail-helper" SG_GATE_DAVMAIL="$W/davmail" \
+        DISPLAY=:9 sh "$L" "$@"; }
 P="$W/home/.local/share/sg-mail/profile"
 run
 [ "$(cat "$P/extensions/sg-mail@stained-glass-os.org.xpi" 2>/dev/null)" = XPI-1 ] && pass "the extension is laid into SG Mail's profile" || fail "no extension in the profile"
@@ -57,6 +64,7 @@ grep -qx -- "--profile" "$W/args" && grep -qx -- "$P" "$W/args" && pass "Thunder
 grep -qx -- "--class" "$W/args" && grep -qx -- "sg-mail" "$W/args" && pass "its window class is sg-mail (the taskbar's icon)" || fail "no window class"
 [ "$(cat "$W/args.fractional" 2>/dev/null)" = 0 ] && pass "GTK is told Thunderbird scales itself (GDK_SG_FRACTIONAL=0: at 175% not scaled twice)" || fail "GDK_SG_FRACTIONAL: $(cat "$W/args.fractional" 2>/dev/null)"
 [ "$(cat "$W/home/.thunderbird/own.default/prefs.js")" = "the person's own profile" ] && [ ! -e "$W/home/.thunderbird/own.default/user.js" ] && pass "the person's own Thunderbird profile is not touched" || fail "own profile touched"
+grep -qx "start-all" "$W/davmail" 2>/dev/null && pass "the Microsoft calendar gateways (DavMail user services) are started" || fail "the DavMail gateways are not started"
 touch "$P/addonStartup.json.lz4"
 run
 [ -e "$P/addonStartup.json.lz4" ] && pass "an unchanged extension keeps Thunderbird's add-on cache" || fail "the cache was dropped for nothing"

@@ -21,14 +21,14 @@ async function claimNow(win) {
   // a tab of ours the session brought back loaded before we were ready:
   // a fresh one instead
   for (const t of tabs) if (t.url && t.url.startsWith(MAIN_URL)) await browser.tabs.remove(t.id);
-  // no mail account yet (the first start): Thunderbird's account setup in
-  // front, SG Mail's window the tab beside it
+  // no mail account yet (the first start): adding one, in front
   const accounts = await browser.accounts.list(false);
   const setup = !accounts.some(a => a.type !== "none" && a.type !== "local");
-  const ours = await browser.tabs.create({ windowId: win.id, url: MAIN_URL, active: !setup });
+  // (SG Mail's own first step: the address; a Microsoft account goes
+  // through DavMail, any other to Thunderbird's account setup)
+  const ours = await browser.tabs.create({ windowId: win.id, url: MAIN_URL + (setup ? "?setup=1" : ""), active: true });
   claimed.set(win.id, ours.id);
   await browser.sgmail.takeOverWindow(win.id, ours.id);
-  if (setup) await browser.sgmail.openTool("accountSetup");
 }
 
 function claim(win) {
@@ -89,4 +89,10 @@ browser.windows.onCreated.addListener(async win => {
   } });
   await browser.windows.remove(win.id).catch(() => {});
   await browser.windows.create({ type: "popup", url: browser.runtime.getURL("ui/compose.html?handoff=" + encodeURIComponent(key)), width: 1000, height: 760, allowScriptsToClose: true });
+});
+
+// An account removed: its Microsoft calendar and contacts (DavMail's
+// gateway, settings and token) go with it
+browser.accounts.onDeleted.addListener(id => {
+  browser.sgmail.msDisconnect(id).catch(e => console.error("sg-mail: Microsoft calendars", e));
 });

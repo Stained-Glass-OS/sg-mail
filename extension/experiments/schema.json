@@ -634,6 +634,114 @@
       "type": "any"
      }
     ]
+   },
+   {
+    "name": "msAccounts",
+    "type": "function",
+    "async": true,
+    "parameters": []
+   },
+   {
+    "name": "msConnect",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "accountId",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "name": "msSignIn",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "accountId",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "name": "msCancel",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "accountId",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "name": "msStatus",
+    "type": "function",
+    "async": true,
+    "parameters": []
+   },
+   {
+    "name": "msStart",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "accountId",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "name": "msDisconnect",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "accountId",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "name": "msDetect",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "email",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "name": "msAddAccount",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "email",
+      "type": "string"
+     },
+     {
+      "name": "fullName",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "name": "openAccountSetup",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "email",
+      "type": "string"
+     },
+     {
+      "name": "fullName",
+      "type": "string"
+     }
+    ]
    }
   ],
   "events": [

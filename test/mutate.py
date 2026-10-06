@@ -33,12 +33,17 @@ def run(m):
     work = os.path.join(AREA, "mutants", m["name"])
     shutil.rmtree(work, ignore_errors=True)
     shutil.copytree(os.path.join(SRC, "extension"), os.path.join(work, "extension"))
-    path = os.path.join(work, "extension", m["file"])
-    text = open(path).read()
-    if text.count(m["find"]) != 1:
-        return False, f"MUTANT {m['name']}: the text to change is in {m['file']} {text.count(m['find'])} times, not once"
-    open(path, "w").write(text.replace(m["find"], m["replace"]))
-    env = dict(os.environ, SG_NONET="1", SG_CWD=SRC, SG_MAIL_EXTENSION=os.path.join(work, "extension"), SG_GATE_TAG=m["name"])
+    # a change to the extension's text, or (outside the extension: the
+    # launcher's scripts) a mutant switch in the environment
+    if "file" in m:
+        path = os.path.join(work, "extension", m["file"])
+        text = open(path).read()
+        if text.count(m["find"]) != 1:
+            return False, f"MUTANT {m['name']}: the text to change is in {m['file']} {text.count(m['find'])} times, not once"
+        open(path, "w").write(text.replace(m["find"], m["replace"]))
+    # the davmail gates: a network card that leads nowhere, a user manager
+    nonet = "lan" if "davmail" in m["gate"] else "1"
+    env = dict(os.environ, SG_NONET=nonet, SG_CWD=SRC, SG_MAIL_EXTENSION=os.path.join(work, "extension"), SG_GATE_TAG=m["name"], **m.get("env", {}))
     log = os.path.join(work, "gate.log")
     with open(log, "w") as f:
         # the checkout is seen elsewhere inside the root: the gate by its relative path

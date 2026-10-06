@@ -9,7 +9,7 @@ Rules-Requires-Root: no
 
 Package: sg-mail
 Architecture: all
-Depends: ${misc:Depends}, thunderbird (>= 1:128)
+Depends: ${misc:Depends}, thunderbird (>= 1:128), sg-davmail (>= 7.0.0), iproute2
 Recommends: fonts-inter
 Description: SG Mail: mail and calendar for Stained Glass OS (built on Thunderbird)
  SG Mail is Stained Glass OS's mail and calendar program, in a window
@@ -28,3 +28,8 @@ Description: SG Mail: mail and calendar for Stained Glass OS (built on Thunderbi
  (local, CalDAV and Internet calendars), the address book and offline
  storage. SG Mail runs Thunderbird with a profile of its own (sg-mail) and
  makes its main window SG Mail's with a Thunderbird extension.
+ .
+ Microsoft accounts (Outlook.com, Hotmail, Live, Microsoft 365, Exchange):
+ mail, calendars and contacts, read and written, through DavMail (package
+ sg-davmail), a gateway SG Mail runs for each account as a user service on
+ this computer only; one sign-in to Microsoft, in DavMail's own window.

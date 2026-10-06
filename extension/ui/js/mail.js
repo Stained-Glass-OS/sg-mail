@@ -75,6 +75,16 @@ export class MailModule {
     if (inbox) this.folders.select(inbox.id);
     else this.list.setMessages([]);
     this.syncSentForFocus();
+    // the first account added while SG Mail runs: its Inbox, once its server
+    // has listed it
+    messenger.accounts.onCreated.addListener(async () => {
+      for (let i = 0; i < 40 && !this.folder; i++) {
+        await new Promise(r => setTimeout(r, 500));
+        await this.folders.refresh();
+        const first = this.folders.firstInbox();
+        if (first && !this.folder) this.folders.select(first.id);
+      }
+    });
   }
 
   // the people written to are in the Sent folders: their news first (an

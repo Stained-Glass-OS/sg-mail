@@ -45,6 +45,13 @@ if [ -n "${DISPLAY:-}" ]; then
     export MOZ_ENABLE_WAYLAND=0 GDK_BACKEND=x11
 fi
 
+# Microsoft calendars and contacts: each account's DavMail gateway (a user
+# service), up before Thunderbird asks it for anything
+DAVMAIL_HELPER=${SG_MAIL_DAVMAIL_HELPER:-/usr/lib/sg-mail/sg-mail-davmail}
+if [ -x "$DAVMAIL_HELPER" ]; then
+    "$DAVMAIL_HELPER" start-all >/dev/null 2>&1 || :
+fi
+
 for a in "$@"; do
     case "$a" in
         --help|-h)

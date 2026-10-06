@@ -1,0 +1,17 @@
+# SG Mail: DavMail, the gateway to one Microsoft account's calendars and
+# contacts (CalDAV/CardDAV on 127.0.0.1 only), for SG Mail's Thunderbird.
+# Set up, started and removed by SG Mail (/usr/lib/sg-mail/sg-mail-davmail);
+# it is not enabled at login: SG Mail starts it when it starts.
+[Unit]
+Description=SG Mail calendar and contacts gateway (DavMail) for %i
+Documentation=man:systemd.service(5) https://davmail.sourceforge.net/
+ConditionPathExists=%E/sg-mail/davmail/%i/davmail.properties
+
+[Service]
+Type=exec
+ExecStart=/usr/lib/sg-mail/sg-mail-davmail run %i
+Restart=on-failure
+RestartSec=15
+UMask=0077
+NoNewPrivileges=yes
+MemoryHigh=400M

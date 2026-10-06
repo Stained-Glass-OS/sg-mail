@@ -822,5 +822,149 @@
   "find": "            if (status === \"COMPLETED\") {",
   "replace": "            if (false) {",
   "why": "Mark Complete not completing the task (no completion date, not 100%)"
+ },
+ {
+  "name": "davmail-no-offer",
+  "gate": "davmail-gate.py",
+  "file": "ui/js/microsoft.js",
+  "find": "messenger.accounts.onCreated?.addListener((id, account) => this.onAccountCreated(id || account?.id));",
+  "replace": "void 0;",
+  "why": "no offer when a Microsoft account is added"
+ },
+ {
+  "name": "davmail-no-calendar",
+  "gate": "davmail-gate.py",
+  "file": "experiments/parent.js",
+  "find": "    lazy.cal.manager.registerCalendar(c);\n    calendars.push(c.id);",
+  "replace": "    calendars.push(c.id);",
+  "why": "the gateway's CalDAV calendar not made in Thunderbird"
+ },
+ {
+  "name": "davmail-no-password",
+  "gate": "davmail-gate.py",
+  "file": "experiments/parent.js",
+  "find": "              await storeDavmailPassword(port, email, password);",
+  "replace": "              void 0;",
+  "why": "the gateway's password not kept for Thunderbird's CalDAV/CardDAV"
+ },
+ {
+  "name": "davmail-no-service",
+  "gate": "davmail-gate.py",
+  "file": "experiments/parent.js",
+  "find": "            await runHelper([\"start\", name]);\n          } catch (e) {\n            await undo();",
+  "replace": "            void 0;\n          } catch (e) {\n            await undo();",
+  "why": "the user service not started after the sign-in"
+ },
+ {
+  "name": "davmail-status-blind",
+  "gate": "davmail-gate.py",
+  "file": "experiments/parent.js",
+  "find": "  if (r.status === 207 || r.status === 200) return { state: \"ok\", detail: \"\" };",
+  "replace": "  return { state: \"ok\", detail: \"\" };",
+  "why": "every gateway answer taken as fine (no Start, no Sign in again)"
+ },
+ {
+  "name": "davmail-no-remove",
+  "gate": "davmail-gate.py",
+  "file": "background.js",
+  "find": "browser.sgmail.msDisconnect(id)",
+  "replace": "Promise.resolve(id)",
+  "why": "a removed account's gateway, token and calendar kept"
+ },
+ {
+  "name": "davmail-cancel-ignored",
+  "gate": "davmail-gate.py",
+  "file": "ui/js/microsoft.js",
+  "find": "      messenger.sgmail.msCancel(accountId).catch(() => {});",
+  "replace": "      void 0;",
+  "why": "Cancel does not end the sign-in"
+ },
+ {
+  "name": "davmail-interactive-service",
+  "gate": "davmail-gate.py",
+  "env": {
+   "SG_MUTANT_DAVMAIL_INTERACTIVE_SERVICE": "1"
+  },
+  "why": "the always-running service may open a sign-in window (no stored-token-only authenticator)"
+ },
+ {
+  "name": "davmail-any-address",
+  "gate": "davmail-gate.py",
+  "env": {
+   "SG_MUTANT_DAVMAIL_ANY_ADDRESS": "1"
+  },
+  "why": "the gateway listens on every address, remote connections allowed"
+ },
+ {
+  "name": "davmail-mail-no-detect",
+  "gate": "davmail-mail-gate.py",
+  "file": "experiments/parent.js",
+  "find": "  if (MS_DOMAINS.test(domain)) return { microsoft: true, via: \"domain\" };",
+  "replace": "",
+  "why": "Outlook.com addresses not recognised as Microsoft accounts"
+ },
+ {
+  "name": "davmail-mail-fcc",
+  "gate": "davmail-mail-gate.py",
+  "file": "experiments/parent.js",
+  "find": "          identity.doFcc = false;",
+  "replace": "          identity.doFcc = true;",
+  "why": "Thunderbird keeps a second Sent copy beside Exchange's"
+ },
+ {
+  "name": "davmail-mail-smtp-kept",
+  "gate": "davmail-mail-gate.py",
+  "file": "experiments/parent.js",
+  "find": "              if (out) MailServices.outgoingServer.deleteServer(out);",
+  "replace": "              void out;",
+  "why": "a removed account's outgoing server kept"
+ },
+ {
+  "name": "davmail-mail-stale-login",
+  "gate": "davmail-mail-gate.py",
+  "file": "experiments/parent.js",
+  "find": "    if (l.username === user) await removeLogin(l);",
+  "replace": "    if (false) await removeLogin(l);",
+  "why": "an old password for the same address kept: IMAP logs in with the wrong one"
+ },
+ {
+  "name": "davmail-mail-no-prefill",
+  "gate": "davmail-mail-gate.py",
+  "file": "experiments/parent.js",
+  "find": "            if (!el || !value || el.value) return false;",
+  "replace": "            return false;",
+  "why": "Thunderbird's setup opens without the address typed in SG Mail"
+ },
+ {
+  "name": "davmail-service-any-address",
+  "gate": "davmail-service-gate.py",
+  "env": {
+   "SG_MUTANT_DAVMAIL_ANY_ADDRESS": "1"
+  },
+  "why": "real DavMail listening on every address"
+ },
+ {
+  "name": "davmail-service-interactive",
+  "gate": "davmail-service-gate.py",
+  "env": {
+   "SG_MUTANT_DAVMAIL_INTERACTIVE_SERVICE": "1"
+  },
+  "why": "real DavMail's service opening its sign-in window on any request"
+ },
+ {
+  "name": "davmail-service-signin-text",
+  "gate": "davmail-service-gate.py",
+  "file": "experiments/parent.js",
+  "find": "  if (/refresh token|authentication|sign.?in|AADSTS|invalid_grant|interaction_required|expired/i.test(r.text)) return { state: \"signin\", detail: r.text };",
+  "replace": "",
+  "why": "DavMail's \"no valid refresh token\" not understood as Sign in again"
+ },
+ {
+  "name": "davmail-shared-kept",
+  "gate": "davmail-gate.py",
+  "file": "experiments/parent.js",
+  "find": " || (origin && c.uri?.spec.startsWith(origin))",
+  "replace": "",
+  "why": "a colleague's calendar opened through a removed account's gateway kept"
  }
 ]

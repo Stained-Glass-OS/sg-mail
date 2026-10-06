@@ -15,6 +15,7 @@ import { PeopleModule } from "./people.js";
 import { TasksModule } from "./tasks.js";
 import { QuickSteps } from "./quicksteps.js";
 import { AutoReplies } from "./autoreply.js";
+import { MicrosoftCalendars } from "./microsoft.js";
 import { installTestHook } from "./testhook.js";
 
 class App {
@@ -28,6 +29,7 @@ class App {
     this.tasks = new TasksModule(this);
     this.quickSteps = new QuickSteps(this);
     this.autoReplies = new AutoReplies(this);
+    this.microsoft = new MicrosoftCalendars(this);
     this.buildNav();
     this.buildRibbon();
     this.wireKeys();
@@ -47,12 +49,15 @@ class App {
     await this.people.start();
     await this.tasks.start();
     await this.autoReplies.load();
+    await this.microsoft.start().catch(e => console.error("sg-mail: Microsoft calendars", e));
     const st = await messenger.storage.local.get(["module", "readingPane"]).catch(() => ({}));
     this.setReadingPane(st.readingPane || "right", false);
     if (["calendar", "people", "tasks"].includes(st.module)) this.showModule(st.module);
     else this.buildRibbon();
     this.updateRibbon();
     window.sgmailReady = true;
+    // the first start, without an account: adding one, in front
+    if (new URLSearchParams(location.search).get("setup") === "1") setTimeout(() => this.microsoft.addAccount(), 300);
     testDump("ready.json", { ready: true });
   }
 
@@ -321,7 +326,7 @@ class App {
   fileMenu(el) {
     showMenu([
       { header: "Account Information" },
-      { label: "Add Account…", icon: "account-add", action: () => messenger.sgmail.openTool("accountSetup") },
+      { label: "Add Account…", icon: "account-add", action: () => this.microsoft.addAccount() },
       { label: "Account Settings…", icon: "settings", action: () => messenger.sgmail.openTool("accountSettings") },
       { label: "Automatic Replies…", icon: "out-of-office", action: () => this.autoReplies.open() },
       { separator: true },
@@ -364,7 +369,7 @@ class App {
       ["new email message mail", () => this.mail.compose({ mode: "new" })],
       ["new appointment", () => this.calendar.newEvent({})],
       ["new meeting", () => this.calendar.newEvent({ meeting: true })],
-      ["add account", () => messenger.sgmail.openTool("accountSetup")],
+      ["add account", () => this.microsoft.addAccount()],
       ["account settings", () => messenger.sgmail.openTool("accountSettings")],
       ["options settings preferences", () => messenger.sgmail.openTool("options")],
       ["address book contacts people", () => this.showModule("people")],
@@ -571,6 +576,7 @@ installTestHook("main", {
     app.mail.list.select("c:" + row.conv);
     return row.conv;
   },
+  microsoft: () => app.microsoft.refresh(),
   selectFolder: a => {
     const f = [...app.mail.folders.folders.values()].find(x => (a.account ? x.accountId === a.account || app.mail.accountLabel(x) === a.account : true)
       && (x.name === a.name || app.mail.folders.el.querySelector(`.fp-row[data-id="${CSS.escape(x.id)}"] .fp-name`)?.textContent === a.name));

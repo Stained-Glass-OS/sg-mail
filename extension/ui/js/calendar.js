@@ -129,11 +129,7 @@ export class CalendarModule {
             viewBtn("month", "view-month", "Month", "Ctrl+Alt+4"),
           ] },
           { label: "Manage Calendars", items: [
-            { id: "open-calendar", icon: "folder-open", label: "Open Calendar", large: true, menu: () => [
-              { label: "Open Shared Calendar…", icon: "shared-calendar", action: () => this.openShared() },
-              { label: "From Internet / Network (CalDAV, iCalendar)…", action: () => messenger.sgmail.openTool("newCalendar") },
-              { label: "From File (.ics)…", action: () => this.importIcs() },
-            ] },
+            { id: "open-calendar", icon: "folder-open", label: "Open Calendar", large: true, menu: () => this.addCalendarItems() },
             { col: [
               { id: "export-ics", icon: "export", label: "Export (.ics)", action: () => this.exportIcs() },
               { id: "calendar-settings", icon: "settings", label: "Calendar Settings", action: () => messenger.sgmail.openTool("options") },
@@ -226,8 +222,13 @@ export class CalendarModule {
     // other people's calendars opened here (Open Shared Calendar)
     group("Shared Calendars", this.calendars.filter(c => c.shared));
     if (!this.calendars.length) side.append(h("p", { style: "color:var(--muted);padding:6px", text: "No calendars." }));
-    const add = h("button", { class: "btn link", style: "margin:8px 4px", html: `${icon("appointment-new", 14)} Add calendar…` });
-    add.addEventListener("click", () => messenger.sgmail.openTool("newCalendar"));
+    // Microsoft accounts' calendars that need something (sign in again, ...)
+    if (this.app.microsoft) side.append(this.app.microsoft.sideStatus());
+    const add = h("button", { class: "btn link", id: "cal-add", style: "margin:8px 4px", html: `${icon("appointment-new", 14)} Add calendar…` });
+    add.addEventListener("click", () => {
+      const r = add.getBoundingClientRect();
+      showMenu(this.addCalendarItems(), { x: r.left, y: r.bottom });
+    });
     side.append(add);
     this.side.replaceChildren(side);
   }
@@ -236,7 +237,7 @@ export class CalendarModule {
     const on = !this.hidden.has(c.id);
     const row = h("div", { class: "cal-item", "data-id": c.id, title: c.name + (c.readOnly ? " (read-only)" : "") + (c.shared ? `\n${c.shared}` : ""),
       html: `<span class="cal-check" style="border-color:${esc(c.color)};background:${on ? esc(c.color) : "transparent"};color:#fff">${on ? icon("accept", 12).replace(/#107c10/g, "#fff") : ""}</span>` +
-        `<span class="cal-name">${esc(c.name)}</span><span class="cal-acct">${esc(c.shared ? (c.readOnly ? "Read" : "Edit") : c.type === "storage" ? "" : c.type === "caldav" ? "CalDAV" : c.type === "ics" ? "Internet" : c.type)}</span>` });
+        `<span class="cal-name">${esc(c.name)}</span><span class="cal-acct">${esc(c.shared ? (c.readOnly ? "Read" : "Edit") : c.davmail ? "Microsoft" : c.type === "storage" ? "" : c.type === "caldav" ? "CalDAV" : c.type === "ics" ? "Internet" : c.type)}</span>` });
     row.addEventListener("click", () => this.toggleCalendar(c.id));
     row.addEventListener("contextmenu", e => {
       e.preventDefault();
@@ -245,6 +246,8 @@ export class CalendarModule {
         { label: "Export (.ics)…", icon: "export", action: () => this.exportIcs([c.id]) },
         { label: "Import into This Calendar…", icon: "import", disabled: c.readOnly, action: () => this.importIcs(c.id) },
         ...(c.shared ? [{ separator: true }, { label: "Remove Calendar", icon: "delete", action: () => this.removeShared(c) }] : []),
+        ...(c.davmail ? [{ separator: true },
+          { label: "Remove Microsoft Calendar and Contacts…", icon: "delete", action: () => this.app.microsoft.disconnect(c.davmail) }] : []),
       ], { x: e.clientX, y: e.clientY });
     });
     return row;
@@ -326,6 +329,19 @@ export class CalendarModule {
     await this.loadCalendars();
     this.renderSide();
     this.refresh();
+  }
+
+  addCalendarItems() {
+    return [
+      { label: "Microsoft 365, Outlook.com or Exchange…", icon: "calendar", action: () => this.app.microsoft.chooseAndConnect() },
+      { label: "Open Shared Calendar…", icon: "shared-calendar", action: () => this.openShared() },
+      { label: "From Internet / Network (CalDAV, iCalendar)…", action: () => messenger.sgmail.openTool("newCalendar") },
+      { label: "From File (.ics)…", action: () => this.importIcs() },
+    ];
+  }
+
+  renderSideIfShown() {
+    if (!this.main.hidden) this.renderSide();
   }
 
   miniMonth(month) {

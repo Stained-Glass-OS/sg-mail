@@ -1,9 +1,12 @@
 """Gate: SG Mail's window and Thunderbird underneath. The main window is
 ours alone (Thunderbird's toolbars, spaces bar and tab strip hidden), titled
 "<folder> - <account> - SG Mail", light or dark as the system is; a person
-with no calendar gets a local Calendar; File > Add Account is Thunderbird's
-own account setup (Thunderbird 145+: the Account Hub over SG Mail's window,
-which also offers Exchange and Microsoft 365 accounts; 140: its setup tab),
+with no calendar gets a local Calendar; File > Add Account asks SG Mail's
+own question first (the address: a Microsoft one goes through DavMail, the
+davmail-mail gate) and then, for any other address, opens Thunderbird's own
+account setup with it typed in (Thunderbird 145+: the Account Hub over SG
+Mail's window, which also offers Exchange and Microsoft 365 accounts; 140:
+its setup tab),
 which finds a provider's settings by its lookup (ISPDB-style autoconfig,
 here a local stand-in) and makes the account, which SG Mail's folder pane
 then shows; Thunderbird knows how to sign in to
@@ -53,6 +56,15 @@ for (let i = 0; i < 100; i++) {
 }
 return null;
 """
+
+
+def sg_add_account(env, name, email):
+    """SG Mail's own first step of adding an account: the name and address;
+    an address that is not Microsoft's goes on to Thunderbird's setup."""
+    env.wait_ui("text", lambda t: t and t[-1] == "Add an account", selector=".modal .modal-title", timeout=30)
+    env.ui("type", selector=".modal #aa-name", value=name)
+    env.ui("type", selector=".modal #aa-email", value=email)
+    env.ui("button", label="Next")
 
 
 def seed(env):
@@ -210,6 +222,7 @@ try:
     # Microsoft 365 (Graph) accounts are offered.
     env.ui("click", selector="#rt-file")
     env.ui("menu", label="Add Account…")
+    sg_add_account(env, "Carol Autoconf", "carol@autoconf.test")
     hub = env.chrome(WHICH_SETUP)
     print("account setup:", "the Account Hub" if hub else "the about:accountsetup tab")
     if hub:
@@ -376,6 +389,11 @@ try:
             break
         time.sleep(1)
     time.sleep(2)
+    t = env.wait_ui("text", lambda t: t and t[-1] == "Add an account", selector=".modal .modal-title", timeout=40)
+    st2 = env.chrome("""const tm = Services.wm.getMostRecentWindow("mail:3pane").document.getElementById("tabmail");
+      return tm.currentTabInfo.browser?.currentURI.spec || tm.currentTabInfo.mode.name;""")
+    g.check("/ui/main.html" in st2, "the first start, with no account: SG Mail's window with its \"Add an account\" in front", (t, st2))
+    sg_add_account(env, "Carol Autoconf", "carol@autoconf.test")
     hub = env.chrome(WHICH_SETUP)
     if hub:
         st = env.chrome(HUB + """
