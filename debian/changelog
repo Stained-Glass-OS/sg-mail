@@ -1,3 +1,20 @@
+sg-mail (0.1.0-9) unstable; urgency=medium
+
+  * Microsoft accounts (DavMail): an invitation accepted, tentatively
+    accepted or declined in the reading pane is answered on Exchange's own
+    copy of the meeting. Exchange puts an invitation in the calendar itself
+    (tentative) under its own UID, the meeting's global object ID; Thunderbird
+    looked for the invitation's UID, did not find it and put the meeting in
+    a second time, which DavMail refuses ("meeting response, but event does
+    not exist") -- the answer never reached Exchange. Found with the real
+    Microsoft 365 test account in a QA VM. The reading pane also shows the
+    answer given there ("You have accepted this invitation", with Tentative
+    and Decline to change it). Gate: davmail-mail (an Exchange-style copy in
+    the stand-in's calendar; mutant davmail-mail-itip-thunderbird), on
+    Thunderbird 140 and 157.
+
+ -- Stained Glass OS <dev@stained-glass.example>  Tue, 06 Oct 2026 22:00:00 +0000
+
 sg-mail (0.1.0-8) unstable; urgency=medium
 
   * SG Mail started again while the last one is still ending (Ctrl+Q,

@@ -145,6 +145,37 @@ try:
     g.check(f"Contacts ({MEGAN})" in books, "and its address book", books)
     g.check(requests_log().count(" window ") == 1, "one sign-in window in all", requests_log().count(" window "))
 
+    # ---- a meeting invitation: Exchange has put it in the calendar itself -------------------------
+    # (the real account showed it: Exchange adds an invitation to the calendar
+    # as tentative, under its own UID -- the global object ID carrying the
+    # invitation's UID -- and DavMail refuses a second copy; SG Mail answers
+    # on Exchange's copy)
+    INV_UID = "planning-qa@example.test"
+    goid = ("040000008200E00074C5B7101A82E00800000000000000000000000000000000000000003200000076" "43616C2D55696401000000"
+            + INV_UID.encode().hex().upper() + "00")
+    vevent = ("BEGIN:VEVENT\r\nUID:{uid}\r\nDTSTAMP:20261001T080000Z\r\nDTSTART:20261020T160000Z\r\nDTEND:20261020T170000Z\r\n"
+              "SUMMARY:QA planning\r\nORGANIZER;CN=Bob Builder:mailto:bob@example.test\r\n"
+              "ATTENDEE;CN=Megan Bowen;PARTSTAT=NEEDS-ACTION;ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:" + MEGAN + "\r\n{extra}END:VEVENT\r\n")
+    cal_ics = lambda uid, extra="": "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Exchange stand-in//EN\r\n" + vevent.format(uid=uid, extra=extra) + "END:VCALENDAR\r\n"
+    env.dav("PUT", f"/{MEGAN}/calendar/exchange-copy.ics", cal_ics(goid, "STATUS:TENTATIVE\r\n"), user=MEGAN, headers={"Content-Type": "text/calendar"})
+    req = cal_ics(INV_UID).replace("VERSION:2.0\r\n", "VERSION:2.0\r\nMETHOD:REQUEST\r\n")
+    env.append("INBOX", message("Bob Builder <bob@example.test>", f"Megan Bowen <{MEGAN}>", "QA planning", text="Shall we plan?",
+                                calendar=(req, "REQUEST")), user=MEGAN)
+    env.ui("click", selector="#nav-mail")
+    env.wait_ui("mail", lambda r: any(x.get("subject") == "QA planning" for x in r["list"]), timeout=120)
+    env.ui("selectMessage", subject="QA planning")
+    env.wait_ui("mail", lambda r: r["reader"].get("invite") is not None, timeout=40)
+    env.ui("click", selector="#invite-accept")
+
+    def meg_vevents():
+        return [re.sub(r"\r?\n[ \t]", "", t).replace("\r", "") for t in env.collection_files(MEGAN, "calendar", ".ics")]
+    acc = wait(lambda: next((e for e in meg_vevents() if goid in e and re.search(r"PARTSTAT=ACCEPTED[^\n]*" + re.escape(MEGAN), e)), None), 60)
+    g.check(acc is not None, "Accept answers on Exchange's own copy of the meeting (Megan ACCEPTED there)", [e[-400:] for e in meg_vevents() if "QA planning" in e])
+    g.check(len([e for e in meg_vevents() if "SUMMARY:QA planning" in e]) == 1, "and puts no second copy in the calendar",
+            len([e for e in meg_vevents() if "SUMMARY:QA planning" in e]))
+    t = env.wait_ui("text", lambda r: r and "You have accepted this invitation." in r[0], selector="#rp-invite", timeout=40)
+    g.check(True, "the reading pane then says it is accepted (and offers Tentative, Decline)", t)
+
     # ---- any other address: Thunderbird's own setup, the address typed in ----------------------
     env.ui("click", selector="#nav-mail")
     env.ui("click", selector="#rt-file")

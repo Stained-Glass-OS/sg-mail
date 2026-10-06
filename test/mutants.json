@@ -974,5 +974,13 @@
   "find": "'<p class=\"ms-consent\" style=\"color:var(--muted)\">If Microsoft says <i>Approval required</i>, your organisation\\'s administrator ' +",
   "replace": "'<p>' +",
   "why": "no word on Microsoft's admin approval (the real test tenant's case)"
+ },
+ {
+  "name": "davmail-mail-itip-thunderbird",
+  "gate": "davmail-mail-gate.py",
+  "file": "experiments/parent.js",
+  "find": "const SG_MUTANT_DAVMAIL_ITIP = false;",
+  "replace": "const SG_MUTANT_DAVMAIL_ITIP = true;",
+  "why": "an invitation answered Thunderbird's way: a second copy, Exchange's own unanswered"
  }
 ]

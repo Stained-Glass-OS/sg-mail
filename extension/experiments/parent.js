@@ -567,6 +567,62 @@ function removeDavmailCollections(key, port) {
   }
 }
 
+const SG_MUTANT_DAVMAIL_ITIP = false;
+// An invitation answered on a Microsoft calendar (through DavMail): Exchange
+// has put the meeting in the calendar itself already (tentative), under its
+// own UID -- the meeting's global object ID, which carries the invitation's
+// UID inside ("vCal-Uid" + its bytes in hex). Thunderbird's own answer
+// would look for the invitation's UID, not find it, and put the meeting in
+// a second time, which DavMail refuses ("meeting response, but event does
+// not exist"). So: Exchange's copy, found (after a refresh of the calendar)
+// and our attendee's answer set on it; DavMail sends Exchange the response.
+// Returns the label, or null (not found: Thunderbird's own way then).
+// Exchange's copy of an invitation's meeting in a Microsoft calendar, or
+// null; refresh: look again at the server first (the copy arrives with the
+// mail), else what Thunderbird has cached
+async function davmailCopy(calendar, invite, refresh) {
+  if (!invite || !invite.startDate) return null;
+  const uid = invite.id || "";
+  // its UTF-8 bytes in hex (no TextEncoder in this scope)
+  const hex = Array.from(unescape(encodeURIComponent(uid)), c => c.charCodeAt(0).toString(16).padStart(2, "0")).join("").toUpperCase();
+  const start = invite.startDate.clone(), end = (invite.endDate || invite.startDate).clone();
+  start.day -= 1;
+  end.day += 1;
+  const filter = Ci.calICalendar.ITEM_FILTER_TYPE_EVENT;
+  const match = i => i.id === uid || (hex.length > 8 && (i.id || "").toUpperCase().includes(hex)) ||
+    (i.title === invite.title && i.startDate && i.startDate.compare(invite.startDate) === 0);
+  const tries = refresh ? 20 : 1;
+  for (let n = 0; n < tries; n++) {
+    if (refresh && n % 5 === 0) calendar.refresh();
+    if (refresh) await new Promise(r => setTimeout(r, n ? 1500 : 500));
+    const found = (await itemsOf(calendar, filter, start, end)).find(match);
+    if (found) return found;
+  }
+  return null;
+}
+
+function myAttendee(item) {
+  const mine = myIdentityEmails();
+  return item.getAttendees().find(a => mine.has((a.id || "").replace(/^mailto:/i, "").toLowerCase())) || null;
+}
+
+const ANSWERED = { ACCEPTED: "You have accepted this invitation.", TENTATIVE: "You have accepted this invitation tentatively.",
+  DECLINED: "You have declined this invitation." };
+
+async function davmailRespond(calendar, itipItem, partstat) {
+  const found = await davmailCopy(calendar, itipItem.getItemList()[0], true);
+  if (!found) return null;
+  const changed = found.clone();
+  const att = myAttendee(changed);
+  if (!att) return null;
+  const updated = att.clone();
+  updated.participationStatus = partstat;
+  changed.removeAttendee(att);
+  changed.addAttendee(updated);
+  await calendar.modifyItem(changed, found);
+  return ANSWERED[partstat] || "";
+}
+
 // The iTIP state of messages shown in the reading pane: message id -> state
 const itipStates = new Map();
 
@@ -1963,6 +2019,20 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
           if (buttons.has("imipUpdateButton")) actions.push("update");
           if (buttons.has("imipDeleteButton")) actions.push("delete");
           if (buttons.has("imipReconfirmButton")) actions.push("reconfirm");
+          // a Microsoft calendar (DavMail): the answer is on Exchange's own
+          // copy of the meeting, which Thunderbird does not know as this one
+          let answered = "";
+          if (state.itipItem.receivedMethod === "REQUEST" && ev) {
+            for (const c of lazy.cal.manager.getCalendars().filter(x => x.getProperty("sgmail.davmail"))) {
+              const copy = await davmailCopy(c, ev, false).catch(() => null);
+              const ps = copy && myAttendee(copy)?.participationStatus;
+              if (ps && ANSWERED[ps]) {
+                answered = ANSWERED[ps];
+                actions.length = 0;
+                actions.push(...["accept", "tentative", "decline"].filter(a => ({ accept: "ACCEPTED", tentative: "TENTATIVE", decline: "DECLINED" })[a] !== ps));
+              }
+            }
+          }
           // the calendars it could go in (Thunderbird would ask with a dialog
           // of its own; SG Mail's reading pane offers the choice instead)
           const itip = lazy.cal.itip;
@@ -1974,7 +2044,7 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
           return {
             calendars: cals.map(c => ({ id: c.id, name: c.name, color: c.getProperty("color") || "" })),
             method: state.itipItem.receivedMethod,
-            label: data.label || "",
+            label: answered || data.label || "",
             actions,
             event: ev ? eventObject(ev, ev.calendar || { id: "", name: "", getProperty: () => null, readOnly: true }) : null,
           };
@@ -2409,6 +2479,16 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
               item.targetCalendar = chosen;
               return true;
             };
+          }
+          // a Microsoft calendar (DavMail): Exchange's own copy answered
+          if (chosen && chosen.getProperty("sgmail.davmail") && partstats[action]
+              && state.itipItem.receivedMethod === "REQUEST" && SG_MUTANT_DAVMAIL_ITIP !== true) {
+            try {
+              const done = await davmailRespond(chosen, state.itipItem, partstats[action]);
+              if (done !== null) return { ok: true, label: done };
+            } catch (e) {
+              console.error("sg-mail: answering on the Microsoft calendar", e);
+            }
           }
           const ok = await new Promise(resolve => {
             const done = lazy.cal.itip.executeAction(win, partstats[action], sendReply ? "AUTO" : "NONE", state.actionFunc,
