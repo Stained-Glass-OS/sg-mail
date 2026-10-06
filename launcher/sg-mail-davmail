@@ -7,7 +7,8 @@
 #
 #   sg-mail-davmail setup NAME KIND EMAIL [EWS_URL] [--mail]
 #                       write NAME's settings; prints port=N (CalDAV and
-#                       CardDAV) and, with --mail, imap=N and smtp=N. KIND:
+#                       CardDAV), ldap=N (the directory, Microsoft accounts)
+#                       and, with --mail, imap=N and smtp=N. KIND:
 #                       microsoft (Microsoft 365, Outlook.com: Microsoft
 #                       Graph) or exchange (an Exchange server's EWS_URL;
 #                       its own password).
@@ -35,8 +36,9 @@
 # (O365StoredTokenAuthenticator), so another local user's connection cannot
 # make a sign-in window appear on this person's screen. Settings and token
 # are this user's only (directory 0700, files 0600). Ports are this user's
-# block: 10000 + (uid mod 1000) * 20, twenty of them (0-14 the services'
-# CalDAV, IMAP and SMTP, 15-19 sign-in), below the kernel's ephemeral range.
+# block: 10000 + (uid mod 1000) * 20, twenty of them (0-15 the services'
+# CalDAV, IMAP, SMTP and LDAP, 16-19 sign-in), below the kernel's ephemeral
+# range.
 #
 # Environment: SG_DAVMAIL (DavMail's launcher, default sg-davmail),
 # SG_MAIL_DAVMAIL_NO_SYSTEMD=1 (no user service manager: a background
@@ -61,7 +63,7 @@ free_port() {
     i=$first
     while [ "$i" -le "$last" ]; do
         p=$((blk + i))
-        if ! grep -qsxE "davmail\.(caldav|imap|smtp)Port=$p" "$BASE"/*/davmail.properties \
+        if ! grep -qsxE "davmail\.(caldav|imap|smtp|ldap)Port=$p" "$BASE"/*/davmail.properties \
            && ! case " $taken " in *" $p "*) true ;; *) false ;; esac \
            && ! port_busy "$p"; then
             echo "$p"; return 0
@@ -76,9 +78,9 @@ port_busy() {
 }
 
 # DavMail's settings for one gateway:
-#   KIND EMAIL URL PORT IMAPPORT SMTPPORT TOKENFILE LOGFILE SIGNIN(0|1)
+#   KIND EMAIL URL PORT IMAPPORT SMTPPORT TOKENFILE LOGFILE SIGNIN(0|1) LDAPPORT
 properties() {
-    kind=$1 email=$2 url=$3 port=$4 imap=$5 smtp=$6 tokens=$7 logf=$8 signin=$9
+    kind=$1 email=$2 url=$3 port=$4 imap=$5 smtp=$6 tokens=$7 logf=$8 signin=$9 ldap=${10:-}
     bind=127.0.0.1 remote=false
     if [ "${SG_MUTANT_DAVMAIL_ANY_ADDRESS:-0}" = 1 ]; then bind=; remote=true; fi
     cat <<EOF
@@ -91,7 +93,8 @@ davmail.caldavPort=$port
 davmail.imapPort=$imap
 davmail.smtpPort=$smtp
 davmail.popPort=
-davmail.ldapPort=
+davmail.ldapPort=$ldap
+davmail.ssl.nosecureldap=true
 davmail.ssl.nosecurecaldav=true
 davmail.ssl.nosecureimap=true
 davmail.ssl.nosecuresmtp=true
@@ -167,19 +170,25 @@ setup)
     chmod 0700 "$BASE" "$d"
     # the ports it has keep (Thunderbird's accounts point at them)
     old() { sed -n "s/^davmail.$1Port=//p" "$d/davmail.properties" 2>/dev/null || true; }
-    port=$(old caldav); imap=; smtp=
-    [ -n "$port" ] || port=$(free_port 0 14) || die "no free port in this user's block"
+    port=$(old caldav); imap=; smtp=; ldap=$(old ldap)
+    [ -n "$port" ] || port=$(free_port 0 15) || die "no free port in this user's block"
+    # the directory (the organisation's people, as DavMail's LDAP gateway
+    # finds them): a Microsoft account's
+    if [ "$kind" = microsoft ] && [ -z "$ldap" ]; then
+        ldap=$(free_port 0 15 "$port") || die "no free port in this user's block"
+    fi
     if [ "$mail" = 1 ]; then
         imap=$(old imap); smtp=$(old smtp)
-        [ -n "$imap" ] || imap=$(free_port 0 14 "$port") || die "no free port in this user's block"
-        [ -n "$smtp" ] || smtp=$(free_port 0 14 "$port $imap") || die "no free port in this user's block"
+        [ -n "$imap" ] || imap=$(free_port 0 15 "$port $ldap") || die "no free port in this user's block"
+        [ -n "$smtp" ] || smtp=$(free_port 0 15 "$port $ldap $imap") || die "no free port in this user's block"
     fi
-    properties "$kind" "$email" "$url" "$port" "$imap" "$smtp" "$d/tokens" "$d/davmail.log" 0 > "$d/davmail.properties.new"
+    properties "$kind" "$email" "$url" "$port" "$imap" "$smtp" "$d/tokens" "$d/davmail.log" 0 "$ldap" > "$d/davmail.properties.new"
     printf '%s\n%s\n%s\n%s\n' "kind=$kind" "email=$email" "url=$url" "mail=$mail" > "$d/account"
     mv "$d/davmail.properties.new" "$d/davmail.properties"
     chmod 0600 "$d/davmail.properties" "$d/account"
     echo "port=$port"
     [ "$mail" = 0 ] || printf 'imap=%s\nsmtp=%s\n' "$imap" "$smtp"
+    [ -z "$ldap" ] || echo "ldap=$ldap"
     ;;
 run)
     name=${1:-}; valid_name "$name"
@@ -238,7 +247,7 @@ signin)
     kind=$(sed -n 's/^kind=//p' "$d/account")
     email=$(sed -n 's/^email=//p' "$d/account")
     [ "$kind" = microsoft ] || die "$name signs in with its password, not a sign-in window"
-    port=$(free_port 15 19) || die "no free port for the sign-in"
+    port=$(free_port 16 19) || die "no free port for the sign-in"
     umask 077
     properties "$kind" "$email" "" "$port" "" "" "$d/tokens" "$d/signin.log" 1 > "$d/signin.properties"
     echo "port=$port"

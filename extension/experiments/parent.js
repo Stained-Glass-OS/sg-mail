@@ -329,6 +329,8 @@ function microsoftKind(account) {
   const server = account.incomingServer;
   const email = account.defaultIdentity?.email || "";
   if (!server || !email) return null;
+  // another mailbox opened through a gateway ("OWN/MAILBOX"): its owner's
+  if ((server.username || "").includes("/")) return null;
   if (server.type === "graph") return { kind: "microsoft", url: "" };
   if (server.type === "ews") {
     const url = server.getStringValue("ews_url") || "";
@@ -552,7 +554,32 @@ function createDavmailCollections(key, link, account) {
   } else {
     books.push(knownBook.UID);
   }
+  // the organisation's directory (DavMail's LDAP gateway: Microsoft's people
+  // search), for finding colleagues by name: Open Shared Calendar, Team
+  // groups, addresses typed in a message
+  if (link.ldap && !MailServices.ab.directories.some(d => d.getStringValue("sgmail.davmail.ldap", "") === key)) {
+    try {
+      const url = davmailLdapUrl(link);
+      const prefId = MailServices.ab.newAddressBook(`Directory (${link.email})`, url, Ci.nsIAbManager.LDAP_DIRECTORY_TYPE, null);
+      const dir = MailServices.ab.getDirectoryFromId(prefId);
+      dir.QueryInterface(Ci.nsIAbLDAPDirectory).authDn = link.user || link.email;
+      dir.setStringValue("sgmail.davmail.ldap", key);
+      books.push(dir.UID);
+    } catch (e) {
+      console.error("sg-mail: directory", e);
+    }
+  }
   return { calendars, books };
+}
+
+function davmailLdapUrl(link) {
+  return `ldap://127.0.0.1:${link.ldap}/ou=people??sub?(objectclass=*)`;
+}
+
+// Thunderbird's LDAP book asks the password manager by the book's URL (the
+// realm) and the server's origin; the gateway's password, as for CalDAV
+async function storeLdapPassword(link, password) {
+  await storeLogin(`ldap://127.0.0.1:${link.ldap}`, davmailLdapUrl(link), "", password);
 }
 
 function removeDavmailCollections(key, port) {
@@ -563,11 +590,12 @@ function removeDavmailCollections(key, port) {
     if (c.getProperty("sgmail.davmail") === key || (origin && c.uri?.spec.startsWith(origin))) lazy.cal.manager.removeCalendar(c);
   }
   for (const d of MailServices.ab.directories) {
-    if (d.getStringValue("sgmail.davmail", "") === key) MailServices.ab.deleteAddressBook(d.URI);
+    if (d.getStringValue("sgmail.davmail", "") === key || d.getStringValue("sgmail.davmail.ldap", "") === key) MailServices.ab.deleteAddressBook(d.URI);
   }
 }
 
 const SG_MUTANT_DAVMAIL_ITIP = false;
+const SG_MUTANT_DAVMAIL_NO_PROBE = false;
 // An invitation answered on a Microsoft calendar (through DavMail): Exchange
 // has put the meeting in the calendar itself already (tentative), under its
 // own UID -- the meeting's global object ID, which carries the invitation's
@@ -621,6 +649,54 @@ async function davmailRespond(calendar, itipItem, partstat) {
   changed.addAttendee(updated);
   await calendar.modifyItem(changed, found);
   return ANSWERED[partstat] || "";
+}
+
+// An IMAP login on the gateway, tried once: "OK", or the server's "NO ..."
+// text (DavMail: no access to that mailbox, or no mailbox at that address)
+function imapLoginProbe(port, user, password) {
+  return new Promise(resolve => {
+    const sts = Cc["@mozilla.org/network/socket-transport-service;1"].getService(Ci.nsISocketTransportService);
+    const t = sts.createTransport([], "127.0.0.1", port, null, null);
+    const out = t.openOutputStream(Ci.nsITransport.OPEN_BLOCKING, 0, 0);
+    const raw = t.openInputStream(0, 0, 0);
+    const inp = Cc["@mozilla.org/scriptableinputstream;1"].createInstance(Ci.nsIScriptableInputStream);
+    inp.init(raw);
+    let buf = "", sent = false, done = false;
+    const q = s => '"' + String(s).replace(/(["\\])/g, "\\$1") + '"';
+    const finish = v => {
+      if (done) return;
+      done = true;
+      try {
+        const bye = "z LOGOUT\r\n";
+        out.write(bye, bye.length);
+      } catch (e) {
+        // gone
+      }
+      t.close(0);
+      resolve(v);
+    };
+    const pump = {
+      QueryInterface: ChromeUtils.generateQI(["nsIInputStreamCallback"]),
+      onInputStreamReady() {
+        try {
+          const n = inp.available();
+          if (n) buf += inp.read(n);
+        } catch (e) {
+          return finish("the gateway closed the connection");
+        }
+        if (!sent && buf.includes("\r\n")) {
+          sent = true;
+          const cmd = `a LOGIN ${q(user)} ${q(password)}\r\n`;
+          out.write(cmd, cmd.length);
+        }
+        const m = /^a (OK|NO|BAD)([^\r\n]*)/m.exec(buf);
+        if (m) return finish(m[1] === "OK" ? "OK" : m[2].trim() || m[1]);
+        raw.asyncWait(pump, 0, 0, Services.tm.mainThread);
+      },
+    };
+    raw.asyncWait(pump, 0, 0, Services.tm.mainThread);
+    setTimeout(() => finish("no answer from the gateway"), 60000);
+  });
 }
 
 // The iTIP state of messages shown in the reading pane: message id -> state
@@ -1487,7 +1563,7 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
           for (const account of MailServices.accounts.accounts) {
             const k = microsoftKind(account);
             const link = davmailLink(account.key);
-            if (!k && !link) continue;
+            if ((!k && !link) || link?.sharedOf) continue;
             out.push({
               accountId: account.key,
               email: account.defaultIdentity?.email || link?.email || "",
@@ -1515,7 +1591,8 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
           // an Exchange server signs in with its own user name and password
           // (Thunderbird asks for it once); Microsoft 365 with DavMail's window
           const user = k.kind === "exchange" ? (account.incomingServer.username || email) : email;
-          const link = { name, email, user, kind: k.kind, port };
+          const ldap = Number((/^ldap=(\d+)$/m.exec(out) || [])[1]) || 0;
+          const link = { name, email, user, kind: k.kind, port, ldap };
           const undo = async () => {
             Services.prefs.clearUserPref(DAVMAIL_PREF + accountId);
             for (const l of await Services.logins.searchLoginsAsync({ origin: davmailOrigin(port), httpRealm: DAVMAIL_REALM })) {
@@ -1548,6 +1625,10 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
             return { ok: false, error: String(e.message || e) };
           }
           await waitForGateway(port);
+          if (link.ldap) {
+            const pw = await davmailPassword(port, email);
+            if (pw) await storeLdapPassword(link, pw);
+          }
           const made = createDavmailCollections(accountId, link, account);
           return { ok: true, calendars: made.calendars, books: made.books };
         },
@@ -1628,7 +1709,7 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
           const name = davmailName(email);
           const out = await runHelper(["setup", name, "microsoft", email, "--mail"]);
           const num = k => Number((new RegExp(`^${k}=(\\d+)$`, "m").exec(out) || [])[1]);
-          const link = { name, email, user: email, kind: "microsoft", port: num("port"), imap: num("imap"), smtp: num("smtp"), mail: true };
+          const link = { name, email, user: email, kind: "microsoft", port: num("port"), imap: num("imap"), smtp: num("smtp"), ldap: num("ldap") || 0, mail: true };
           if (!link.port || !link.imap || !link.smtp) throw new ExtensionError("The gateway has no ports: " + out.slice(0, 200));
           const password = randomPassword();
           const undo = async () => {
@@ -1684,6 +1765,7 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
           account.incomingServer = server;
           link.smtpKey = outServer.key;
           Services.prefs.setStringPref(DAVMAIL_PREF + account.key, JSON.stringify(link));
+          if (link.ldap) await storeLdapPassword(link, password);
           const made = createDavmailCollections(account.key, link, account);
           try {
             server.getNewMessages(server.rootFolder.getFolderWithFlags(Ci.nsMsgFolderFlags.Inbox) || server.rootFolder, null, null);
@@ -1742,7 +1824,7 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
           for (const pref of Services.prefs.getChildList(DAVMAIL_PREF)) {
             const accountId = pref.slice(DAVMAIL_PREF.length);
             const link = davmailLink(accountId);
-            if (!link) continue;
+            if (!link || link.sharedOf) continue;
             const entry = { accountId, email: link.email, kind: link.kind, port: link.port, signingIn: signIns.has(accountId) };
             const password = await davmailPassword(link.port, link.user || link.email);
             if (!password) {
@@ -1767,6 +1849,15 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
         async msDisconnect(accountId) {
           const link = davmailLink(accountId);
           if (!link) return false;
+          // a shared mailbox: its own IMAP password only (the gateway is its
+          // owner account's)
+          if (link.sharedOf) {
+            for (const l of await Services.logins.searchLoginsAsync({ origin: "imap://127.0.0.1" })) {
+              if (l.username === link.user) await removeLogin(l);
+            }
+            Services.prefs.clearUserPref(DAVMAIL_PREF + accountId);
+            return true;
+          }
           const e = signIns.get(accountId);
           if (e) {
             e.cancelled = true;
@@ -1784,6 +1875,19 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
           await step("password", async () => {
             for (const l of await Services.logins.searchLoginsAsync({ origin: davmailOrigin(link.port), httpRealm: DAVMAIL_REALM })) {
               await removeLogin(l);
+            }
+          });
+          if (link.ldap) {
+            await step("directory password", async () => {
+              for (const l of await Services.logins.searchLoginsAsync({ origin: `ldap://127.0.0.1:${link.ldap}` })) await removeLogin(l);
+            });
+          }
+          // the shared mailboxes opened through this account go with it
+          await step("shared mailboxes", () => {
+            for (const pref of Services.prefs.getChildList(DAVMAIL_PREF)) {
+              const other = davmailLink(pref.slice(DAVMAIL_PREF.length));
+              const acct = other && other.sharedOf === accountId ? MailServices.accounts.getAccount(pref.slice(DAVMAIL_PREF.length)) : null;
+              if (acct) MailServices.accounts.removeAccount(acct, true);
             }
           });
           if (link.mail) {
@@ -1820,6 +1924,8 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
             shared: c.getProperty("sgmail.shared") || "",
             tasks: c.getProperty("capabilities.tasks.supported") !== false,
             davmail: c.getProperty("sgmail.davmail") || "",
+            // a calendar group of the person's own (Outlook's "Team: ...", ...)
+            group: c.getProperty("sgmail.group") || "",
           }));
         },
 
@@ -2293,11 +2399,20 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
                   for (const cal of davCalendars(r.text, url)) {
                     if (cal.readable && !found.some(f => f.url === cal.url)) found.push(Object.assign(cal, { username: auth.username }));
                   }
-                } else if (r.status === 403) {
-                  lastError = `${email} has not shared a calendar with you`;
+                } else if (r.status === 403 || /ErrorItemNotFound|ErrorAccessDenied|ErrorFolderNotFound/.test(r.text || "")) {
+                  // (Microsoft, through DavMail: a calendar one may not see
+                  // is "not found")
+                  // (what a group's address said first stays: it says more)
+                  if (!/is a group or a list/.test(lastError)) lastError = `${email} has not shared a calendar with you`;
+                } else if (/MailboxNotEnabledForRESTAPI/.test(r.text || "")) {
+                  // a Microsoft 365 group or a distribution list: no mailbox
+                  // of its own that DavMail can open
+                  lastError = `${email} is a group or a list, whose calendar DavMail cannot open; open the members' calendars instead`;
                 }
               } catch (e) {
-                lastError = String(e.message || e);
+                // a path the server does not serve at all: the reason found
+                // on another one says more
+                lastError = lastError || String(e.message || e);
               }
               if (found.length) break;
             }
@@ -2318,12 +2433,81 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
           c.setProperty("color", info.color || "#8764b8");
           c.setProperty("username", info.username || "");
           c.setProperty("sgmail.shared", String(info.owner || "").toLowerCase());
+          if (info.group) c.setProperty("sgmail.group", String(info.group));
           c.setProperty("cache.enabled", true);
           if (!info.writable) c.readOnly = true;
           // no invitations sent or answered from another person's calendar
           c.setProperty("imip.identity.disabled", true);
           lazy.cal.manager.registerCalendar(c);
           return c.id;
+        },
+
+        // a calendar put in a calendar group of the person's own ("" takes
+        // it out: My Calendars, or Shared Calendars)
+        async setCalendarGroup(calendarId, group) {
+          const c = calendarById(calendarId);
+          if (group) c.setProperty("sgmail.group", String(group).slice(0, 80));
+          else c.deleteProperty("sgmail.group");
+          return true;
+        },
+
+        // A shared (or delegated) mailbox through a Microsoft account's
+        // gateway: DavMail opens another mailbox for an IMAP login of
+        // "OWN-ADDRESS/MAILBOX-ADDRESS" (its documented syntax) with the
+        // account's own sign-in; Thunderbird gets it as one more account,
+        // its folders a tree of their own. What Exchange allows (read, or
+        // read and write) is what works.
+        async msAddSharedMailbox(accountId, mailbox) {
+          const link = davmailLink(accountId);
+          if (!link || link.kind !== "microsoft" || link.sharedOf) throw new ExtensionError("Not a Microsoft account set up through DavMail");
+          mailbox = String(mailbox || "").trim().toLowerCase();
+          if (!/^[a-z0-9._+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(mailbox)) throw new ExtensionError("Not an e-mail address: " + mailbox);
+          if (mailbox === link.email) throw new ExtensionError("That is the account's own mailbox");
+          const user = `${link.email}/${mailbox}`;
+          if (MailServices.accounts.accounts.some(a => a.incomingServer?.username === user)) throw new ExtensionError(`${mailbox} is already open`);
+          // the gateway's IMAP (an account set up for calendars only gets it now)
+          if (!link.imap) {
+            const out = await runHelper(["setup", link.name, link.kind, link.email, "--mail"]);
+            link.imap = Number((/^imap=(\d+)$/m.exec(out) || [])[1]);
+            link.smtp = Number((/^smtp=(\d+)$/m.exec(out) || [])[1]);
+            Services.prefs.setStringPref(DAVMAIL_PREF + accountId, JSON.stringify(link));
+            await runHelper(["stop", link.name], { allowFail: true });
+            await runHelper(["start", link.name]);
+            await waitForGateway(link.port);
+          }
+          const password = await davmailPassword(link.port, link.email);
+          if (!password) throw new ExtensionError("Sign in to Microsoft again first");
+          // may the account open it? (asked once: Thunderbird would ask for
+          // a password over and over for a mailbox one cannot open)
+          const probe = SG_MUTANT_DAVMAIL_NO_PROBE ? "OK" : await imapLoginProbe(link.imap, user, password);
+          if (probe !== "OK") {
+            return { ok: false, error: `${mailbox} could not be opened: you have no access to it, or it is not a mailbox (${probe})` };
+          }
+          await storeLogin("imap://127.0.0.1", "imap://127.0.0.1", user, password);
+          const server = MailServices.accounts.createIncomingServer(user, "127.0.0.1", "imap");
+          server.port = link.imap;
+          server.socketType = Ci.nsMsgSocketType.plain;
+          server.authMethod = Ci.nsMsgAuthMethod.passwordCleartext;
+          server.prettyName = mailbox;
+          server.setBoolValue("use_idle", true);
+          const identity = MailServices.accounts.createIdentity();
+          identity.email = mailbox;
+          identity.fullName = mailbox;
+          const owner = MailServices.accounts.getAccount(accountId);
+          const ownSmtp = owner?.defaultIdentity?.smtpServerKey || link.smtpKey;
+          if (ownSmtp) identity.smtpServerKey = ownSmtp;
+          // (Exchange keeps the shared mailbox's Sent copy)
+          identity.doFcc = Boolean(false);
+          const account = MailServices.accounts.createAccount();
+          account.addIdentity(identity);
+          account.incomingServer = server;
+          Services.prefs.setStringPref(DAVMAIL_PREF + account.key, JSON.stringify({ sharedOf: accountId, email: mailbox, user, kind: "shared", port: link.port }));
+          try {
+            server.getNewMessages(server.rootFolder, null, null);
+          } catch (e) {
+            // the first check comes by itself
+          }
+          return { ok: true, accountId: account.key };
         },
 
         async removeCalendar(calendarId) {

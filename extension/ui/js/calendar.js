@@ -31,8 +31,9 @@ export class CalendarModule {
   }
 
   async start() {
-    const st = await messenger.storage.local.get(["calView", "calHidden"]).catch(() => ({}));
+    const st = await messenger.storage.local.get(["calView", "calHidden", "calSideBySide"]).catch(() => ({}));
     if (st.calView) this.view = st.calView;
+    this.sideBySide = !!st.calSideBySide;
     this.hidden = new Set(st.calHidden || []);
     messenger.sgmail.onCalendarChanged.addListener(() => this.loadCalendars().then(() => this.refreshSoon()));
     messenger.sgmail.onAlarm.addListener(ev => this.onAlarm(ev));
@@ -146,6 +147,11 @@ export class CalendarModule {
             viewBtn("week", "view-week", "Week", "Ctrl+Alt+3"),
             viewBtn("month", "view-month", "Month", "Ctrl+Alt+4"),
           ] },
+          // several calendars in Day: each its own column (Outlook's side by
+          // side), or all in one (overlay)
+          { label: "Calendars", items: [
+            { id: "side-by-side", icon: "view-workweek", label: "Side by Side", large: true, action: () => this.setSideBySide(!this.sideBySide) },
+          ] },
         ] },
       ],
     };
@@ -154,6 +160,23 @@ export class CalendarModule {
   markViewButtons() {
     if (!this.app.ribbon) return;
     for (const v of ["day", "workweek", "week", "month"]) this.app.ribbon.toggle("view-" + v, this.view === v);
+    this.app.ribbon.toggle("side-by-side", !!this.sideBySide);
+  }
+
+  async setSideBySide(on) {
+    this.sideBySide = on;
+    await messenger.storage.local.set({ calSideBySide: on }).catch(() => {});
+    // side by side is a Day view of each calendar
+    if (on && this.view !== "day") return this.setView("day");
+    this.render();
+    this.refresh();
+  }
+
+  // the calendars side by side (Day view, more than one shown), or null
+  sideBySideCalendars() {
+    if (!this.sideBySide || this.view !== "day") return null;
+    const shown = this.calendars.filter(c => !this.hidden.has(c.id));
+    return shown.length > 1 ? shown : null;
   }
 
   setView(v) {
@@ -213,14 +236,30 @@ export class CalendarModule {
   renderSide() {
     const side = h("div", { class: "cal-side" });
     side.append(this.miniMonth(this.navMonth || new Date(this.date.getFullYear(), this.date.getMonth(), 1)));
-    const group = (title, list) => {
+    // calendar groups, as Outlook has them: each with a box that shows or
+    // hides all its calendars at once
+    const group = (title, list, key) => {
       if (!list.length) return;
-      side.append(h("div", { class: "cal-list-head", html: `${icon("chevron-down", 12)} ${esc(title)}` }));
+      const allOn = list.every(c => !this.hidden.has(c.id));
+      const head = h("div", { class: "cal-list-head cal-group", "data-group": key, "data-title": title, title: allOn ? "Hide the group's calendars" : "Show the group's calendars",
+        html: `${icon("chevron-down", 12)} <span class="cal-group-check">${allOn ? "☑" : "☐"}</span> ${esc(title)}` });
+      head.addEventListener("click", () => this.toggleGroup(list, allOn));
+      head.addEventListener("contextmenu", e => {
+        e.preventDefault();
+        if (!key.startsWith("g:")) return;
+        showMenu([
+          { label: "Add Calendar to This Group…", icon: "calendar", action: () => this.openShared(key.slice(2)) },
+          { label: "Rename Group…", action: () => this.renameGroup(key.slice(2), list) },
+          { label: "Remove Group (keep its calendars)", action: () => this.dissolveGroup(list) },
+        ], { x: e.clientX, y: e.clientY });
+      });
+      side.append(head);
       for (const c of list) side.append(this.calendarRow(c));
     };
-    group("My Calendars", this.calendars.filter(c => !c.shared));
+    group("My Calendars", this.calendars.filter(c => !c.shared && !c.group), "mine");
+    for (const name of this.groupNames()) group(name, this.calendars.filter(c => c.group === name), "g:" + name);
     // other people's calendars opened here (Open Shared Calendar)
-    group("Shared Calendars", this.calendars.filter(c => c.shared));
+    group("Shared Calendars", this.calendars.filter(c => c.shared && !c.group), "shared");
     if (!this.calendars.length) side.append(h("p", { style: "color:var(--muted);padding:6px", text: "No calendars." }));
     // Microsoft accounts' calendars that need something (sign in again, ...)
     if (this.app.microsoft) side.append(this.app.microsoft.sideStatus());
@@ -245,6 +284,12 @@ export class CalendarModule {
         { label: on ? "Hide Calendar" : "Show Calendar", action: () => this.toggleCalendar(c.id) },
         { label: "Export (.ics)…", icon: "export", action: () => this.exportIcs([c.id]) },
         { label: "Import into This Calendar…", icon: "import", disabled: c.readOnly, action: () => this.importIcs(c.id) },
+        { label: "Move to Group", submenu: [
+          ...this.groupNames().filter(n => n !== c.group).map(n => ({ label: n, action: () => this.moveToGroup(c, n) })),
+          ...(c.group ? [{ label: c.shared ? "Shared Calendars" : "My Calendars", action: () => this.moveToGroup(c, "") }] : []),
+          { separator: true },
+          { label: "New Calendar Group…", action: () => this.newGroup([c]) },
+        ] },
         ...(c.shared ? [{ separator: true }, { label: "Remove Calendar", icon: "delete", action: () => this.removeShared(c) }] : []),
         ...(c.davmail ? [{ separator: true },
           { label: "Remove Microsoft Calendar and Contacts…", icon: "delete", action: () => this.app.microsoft.disconnect(c.davmail) }] : []),
@@ -256,7 +301,7 @@ export class CalendarModule {
   // Open Shared Calendar: a colleague's calendar on the same calendar
   // server, by their name or address (what they let one see: read, or edit
   // as a delegate)
-  async openShared() {
+  async openShared(group = "") {
     const input = h("input", { type: "text", id: "shared-name", style: "flex:1", placeholder: "Name or e-mail address", autocomplete: "off" });
     const v = await dialog({
       title: "Open a Shared Calendar",
@@ -264,25 +309,39 @@ export class CalendarModule {
       buttons: [{ label: "OK", primary: true, value: box => box.querySelector("#shared-name").value.trim() }, { label: "Cancel", value: null, cancel: true }],
     });
     if (!v) return;
-    // a name: the address from the address book
-    let email = v, name = "";
-    const m = v.match(/<([^>]+)>/);
-    if (m) {
-      email = m[1];
-      name = v.replace(/<[^>]+>/, "").replace(/"/g, "").trim();
-    } else if (!v.includes("@")) {
-      try {
-        const found = await searchAddressBooks(v);
-        const card = found.find(n => /^EMAIL/mi.test(n.vCard || ""));
-        if (card) {
-          email = ((card.vCard.match(/^EMAIL[^:]*:(.*)$/mi) || [])[1] || "").trim();
-          name = ((card.vCard.match(/^FN[^:]*:(.*)$/mi) || [])[1] || v).trim();
-        }
-      } catch (e) {
-        // no address books
-      }
+    const who = await this.resolvePerson(v);
+    if (!who) return dialog({ title: "Open a Shared Calendar", body: `<p>SG Mail does not know "${esc(v)}". Type their e-mail address.</p>` });
+    const r0 = await this.openPersonCalendars(who, group, true);
+    if (r0) {
+      await this.loadCalendars();
+      this.renderSide();
+      this.refresh();
     }
-    if (!email.includes("@")) return dialog({ title: "Open a Shared Calendar", body: `<p>SG Mail does not know "${esc(v)}". Type their e-mail address.</p>` });
+  }
+
+  // a name or address -> { email, name }: the address books, and the
+  // organisation's directory (a Microsoft account's, through DavMail)
+  async resolvePerson(v) {
+    v = String(v || "").trim();
+    const m = v.match(/<([^>]+)>/);
+    if (m) return { email: m[1].trim(), name: v.replace(/<[^>]+>/, "").replace(/"/g, "").trim() };
+    if (v.includes("@")) return { email: v, name: "" };
+    try {
+      const found = await searchAddressBooks(v, true);
+      const card = found.find(n => /^EMAIL/mi.test(n.vCard || ""));
+      if (card) {
+        return { email: ((card.vCard.match(/^EMAIL[^:]*:(.*)$/mi) || [])[1] || "").trim(),
+          name: ((card.vCard.match(/^FN[^:]*:(.*)$/mi) || [])[1] || v).trim() };
+      }
+    } catch (e) {
+      // no address books
+    }
+    return null;
+  }
+
+  // the calendars a person shares with one, opened (into GROUP); ask: let
+  // the person pick among several and say what went wrong. True if any opened.
+  async openPersonCalendars({ email, name }, group, ask) {
     this.app.setStatus(`Looking for ${email}'s calendar…`);
     let r;
     try {
@@ -292,15 +351,17 @@ export class CalendarModule {
     }
     if (!r.calendars.length) {
       this.app.setStatus("");
-      return dialog({ title: "Open a Shared Calendar", body: `<p id="shared-error">${esc(r.error || "No calendar was found.")}</p>` });
+      if (ask) await dialog({ title: "Open a Shared Calendar", body: `<p id="shared-error">${esc(r.error || "No calendar was found.")}</p>` });
+      return ask ? false : (r.error || "no calendar");
     }
     let chosen = r.calendars;
-    if (r.calendars.length > 1) {
+    if (!ask) chosen = r.calendars.slice(0, 1);
+    else if (r.calendars.length > 1) {
       const box = h("div", {}, h("p", { text: `${email} has shared these calendars with you:` }),
         r.calendars.map((c, i) => h("label", { class: "form-row", style: "gap:6px" }, h("input", { type: "checkbox", value: String(i), checked: i === 0 }), `${c.name}${c.writable ? " (can edit)" : ""}`)));
       const pick = await dialog({ title: "Open a Shared Calendar", body: box,
         buttons: [{ label: "Open", primary: true, value: b => [...b.querySelectorAll("input:checked")].map(i => Number(i.value)) }, { label: "Cancel", value: null, cancel: true }] });
-      if (!pick || !pick.length) return;
+      if (!pick || !pick.length) return false;
       chosen = pick.map(i => r.calendars[i]);
     }
     const owner = name || displayName(email);
@@ -308,15 +369,123 @@ export class CalendarModule {
     for (const [i, c] of chosen.entries()) {
       try {
         await messenger.sgmail.openSharedCalendar({ url: c.url, name: `${owner} - ${c.name}`, color: c.color || colors[(this.calendars.length + i) % colors.length],
-          owner: email, writable: c.writable, username: c.username });
+          owner: email, writable: c.writable, username: c.username, group: group || "" });
       } catch (e) {
         toast("The calendar could not be opened: " + e.message);
       }
     }
+    this.app.setStatus(`${owner}'s calendar is open`);
+    return ask ? true : "";
+  }
+
+  // ---- calendar groups (Outlook's "My Calendars", "Team: ...", ...) ------------------------
+
+  groupNames() {
+    return [...new Set(this.calendars.map(c => c.group).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  }
+
+  async toggleGroup(list, allOn) {
+    for (const c of list) {
+      if (allOn) this.hidden.add(c.id);
+      else this.hidden.delete(c.id);
+    }
+    // drawn at once (the group's box says what a second click will do)
+    this.renderSide();
+    this.refresh();
+    await messenger.storage.local.set({ calHidden: [...this.hidden] }).catch(() => {});
+  }
+
+  async moveToGroup(c, group) {
+    await messenger.sgmail.setCalendarGroup(c.id, group);
+    await this.loadCalendars();
+    this.renderSide();
+  }
+
+  async askGroupName(title, value = "") {
+    const v = await dialog({ title, body: h("div", { class: "form-row" }, h("label", { text: "Name:" }),
+      h("input", { type: "text", id: "group-name", style: "flex:1", value, autocomplete: "off" })),
+    buttons: [{ label: "OK", primary: true, value: b => b.querySelector("#group-name").value.trim() }, { label: "Cancel", value: null, cancel: true }] });
+    return v || null;
+  }
+
+  async newGroup(calendars = []) {
+    const name = await this.askGroupName("New Calendar Group");
+    if (!name) return;
+    for (const c of calendars) await messenger.sgmail.setCalendarGroup(c.id, name);
+    if (!calendars.length) {
+      // an empty group shows once a calendar is in it: open one now
+      return this.openShared(name);
+    }
+    await this.loadCalendars();
+    this.renderSide();
+  }
+
+  async renameGroup(old, list) {
+    const name = await this.askGroupName("Rename Calendar Group", old);
+    if (!name || name === old) return;
+    for (const c of list) await messenger.sgmail.setCalendarGroup(c.id, name);
+    await this.loadCalendars();
+    this.renderSide();
+  }
+
+  async dissolveGroup(list) {
+    for (const c of list) await messenger.sgmail.setCalendarGroup(c.id, "");
+    await this.loadCalendars();
+    this.renderSide();
+  }
+
+  // A team's calendars in a group of their own ("Team: ..."): the people by
+  // name or address, or a contact group's members; each one's calendar as
+  // they share it. (Outlook's own Team group comes from the organisation's
+  // reporting lines, which DavMail does not offer: the people are named here.)
+  async newTeamGroup() {
+    const lists = [];
+    try {
+      for (const b of await messenger.addressBooks.list(true)) {
+        for (const l of b.mailingLists || []) lists.push({ id: l.id, name: l.name });
+      }
+    } catch (e) {
+      // no address books
+    }
+    const body = h("div", {},
+      h("div", { class: "form-row" }, h("label", { text: "Group name:" }), h("input", { type: "text", id: "team-name", style: "flex:1", value: "Team", autocomplete: "off" })),
+      h("p", { text: "People (names or e-mail addresses, one per line):" }),
+      h("textarea", { id: "team-people", rows: "6", style: "width:100%;box-sizing:border-box" }),
+      lists.length ? h("div", { class: "form-row" }, h("label", { text: "Or a contact group:" }),
+        h("select", { id: "team-list", style: "flex:1" }, h("option", { value: "", text: "(none)" }), ...lists.map(l => h("option", { value: l.id, text: l.name })))) : "");
+    const v = await dialog({ title: "New Team Calendar Group", body, width: 480,
+      buttons: [{ label: "Open Calendars", primary: true, value: b => ({ name: b.querySelector("#team-name").value.trim() || "Team",
+        people: b.querySelector("#team-people").value.split(/[\n;]+/).map(x => x.trim()).filter(Boolean), list: b.querySelector("#team-list")?.value || "" }) },
+      { label: "Cancel", value: null, cancel: true }] });
+    if (!v) return null;
+    const people = [...v.people];
+    if (v.list) {
+      try {
+        for (const m of await messenger.addressBooks.mailingLists.listMembers(v.list)) {
+          const e = ((m.vCard || "").match(/^EMAIL[^:]*:(.*)$/mi) || [])[1];
+          if (e) people.push(e.trim());
+        }
+      } catch (e) {
+        console.error("sg-mail: team members", e);
+      }
+    }
+    const opened = [], missing = [];
+    for (const p of people) {
+      const who = await this.resolvePerson(p);
+      if (!who) {
+        missing.push(`${p}: not found`);
+        continue;
+      }
+      const err = await this.openPersonCalendars(who, v.name, false);
+      if (err) missing.push(`${who.name || who.email}: ${err}`);
+      else opened.push(who.name || who.email);
+    }
     await this.loadCalendars();
     this.renderSide();
     this.refresh();
-    this.app.setStatus(`${owner}'s calendar is open`);
+    await dialog({ title: v.name, body: `<p id="team-result">${opened.length} calendar${opened.length === 1 ? "" : "s"} opened in "${esc(v.name)}".</p>` +
+      (missing.length ? `<p>Not opened (not shared with you, or not found):</p><ul>${missing.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : "") });
+    return { opened, missing };
   }
 
   async removeShared(c) {
@@ -335,6 +504,8 @@ export class CalendarModule {
     return [
       { label: "Microsoft 365, Outlook.com or Exchange…", icon: "calendar", action: () => this.app.microsoft.chooseAndConnect() },
       { label: "Open Shared Calendar…", icon: "shared-calendar", action: () => this.openShared() },
+      { label: "New Team Calendar Group…", icon: "people", action: () => this.newTeamGroup() },
+      { label: "New Calendar Group…", action: () => this.newGroup() },
       { label: "From Internet / Network (CalDAV, iCalendar)…", action: () => messenger.sgmail.openTool("newCalendar") },
       { label: "From File (.ics)…", action: () => this.importIcs() },
     ];
@@ -417,16 +588,24 @@ export class CalendarModule {
   }
 
   renderGrid() {
-    const days = this.days();
+    const sbs = this.sideBySideCalendars();
+    const days = sbs ? sbs.map(() => this.date) : this.days();
     const cols = `56px repeat(${days.length}, 1fr)`;
-    const tg = h("div", { class: "tg" });
+    const tg = h("div", { class: "tg" + (sbs ? " side-by-side" : "") });
     const dayHead = h("div", { class: "tg-days", style: `grid-template-columns:${cols}` });
     dayHead.append(h("div", { class: "tg-gutter-head" }));
     const today = new Date();
-    for (const d of days) {
+    days.forEach((d, i) => {
+      if (sbs) {
+        // the calendar's name over its column, in its colour
+        dayHead.append(h("div", { class: "tg-dayhead tg-calhead" + (sameDay(d, today) ? " today" : ""), "data-calendar": sbs[i].id,
+          style: `border-top:3px solid ${sbs[i].color}`, title: sbs[i].name,
+          html: `<span class="dow" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(sbs[i].name)}</span>` }));
+        return;
+      }
       dayHead.append(h("div", { class: "tg-dayhead" + (sameDay(d, today) ? " today" : ""),
         html: `<span class="num">${d.getDate()}</span><span class="dow">${esc(fmt.weekdayLong(d))}</span>` }));
-    }
+    });
     this.allDayRow = h("div", { class: "tg-allday", style: `grid-template-columns:${cols}` });
     this.allDayRow.append(h("div", { class: "tg-gutter-head", text: "" }));
     this.allCells = days.map(d => {
@@ -446,8 +625,8 @@ export class CalendarModule {
     const hours = h("div", { class: "tg-hours" });
     for (let i = 0; i < 24; i++) hours.append(h("div", { class: "tg-hour", text: i ? fmt.hour(new Date(2024, 0, 1, i)) : "" }));
     grid.append(hours);
-    this.cols = days.map(d => {
-      const col = h("div", { class: "tg-col", "data-day": d.getTime() });
+    this.cols = days.map((d, ci) => {
+      const col = h("div", { class: "tg-col", "data-day": d.getTime(), ...(sbs ? { "data-calendar": sbs[ci].id } : {}) });
       for (let s = 0; s < 48; s++) {
         const hour = s / 2;
         const work = d.getDay() > 0 && d.getDay() < 6 && hour >= WORK_START && hour < WORK_END;
@@ -456,7 +635,7 @@ export class CalendarModule {
       }
       this.wireColumn(col, d);
       grid.append(col);
-      return { day: d, el: col };
+      return { day: d, el: col, calendarId: sbs ? sbs[ci].id : null };
     });
     scroll.append(grid);
     tg.append(dayHead, this.allDayRow, scroll);
@@ -627,7 +806,7 @@ export class CalendarModule {
     for (const el of this.main.querySelectorAll(".ev")) el.remove();
     for (const c of this.cols) {
       const dayStart = c.day.getTime(), dayEnd = addDays(c.day, 1).getTime();
-      const timed = this.events.filter(e => !e.allDay && e.start < dayEnd && e.end > dayStart)
+      const timed = this.events.filter(e => !e.allDay && e.start < dayEnd && e.end > dayStart && (!c.calendarId || e.calendarId === c.calendarId))
         .map(e => ({ ev: e, s: Math.max(e.start, dayStart), e: Math.min(Math.max(e.end, e.start + 15 * 60000), dayEnd) }));
       // overlapping events side by side
       timed.sort((a, b) => a.s - b.s || b.e - a.e);
@@ -666,7 +845,8 @@ export class CalendarModule {
     for (let i = 0; i < this.cols.length; i++) {
       const d = this.cols[i].day, dEnd = addDays(d, 1).getTime();
       const cell = this.allCells[i];
-      for (const ev of this.events.filter(e => e.allDay && e.start < dEnd && e.end > d.getTime())) {
+      const calId = this.cols[i].calendarId;
+      for (const ev of this.events.filter(e => e.allDay && e.start < dEnd && e.end > d.getTime() && (!calId || e.calendarId === calId))) {
         const el = this.eventEl(ev, "ev allday", "", `<span class="ev-title">${esc(ev.title || "(No title)")}</span>`);
         cell.append(el);
       }
@@ -1076,8 +1256,9 @@ export class CalendarModule {
     const data = {
       view: this.view,
       title: this.main.querySelector("#cal-title")?.textContent || "",
-      calendars: this.calendars.map(c => ({ name: c.name, type: c.type, shown: !this.hidden.has(c.id), readOnly: c.readOnly, shared: c.shared })),
-      groups: [...this.side.querySelectorAll(".cal-list-head")].map(e => e.textContent.trim()),
+      calendars: this.calendars.map(c => ({ name: c.name, type: c.type, shown: !this.hidden.has(c.id), readOnly: c.readOnly, shared: c.shared, group: c.group || "" })),
+      sideBySide: [...this.main.querySelectorAll(".tg-calhead")].map(el => el.textContent.trim()),
+      groups: [...this.side.querySelectorAll(".cal-list-head")].map(e => e.dataset.title || e.textContent.trim()),
       events: this.events.map(e => ({ title: e.title, start: e.start, end: e.end, allDay: e.allDay, calendar: e.calendarName, recurring: e.recurring,
         location: e.location, attendees: e.attendees.map(a => a.email + ":" + a.status), myStatus: e.myStatus })),
       drawn: [...this.main.querySelectorAll("[data-key]")].map(el => el.textContent.trim()).slice(0, 200),

@@ -45,7 +45,9 @@ SIEVE_PORT = 14190
 USERS = {"alice@example.test": ("Alice Example", "alice-secret"), "bob@example.test": ("Bob Builder", "bob-secret"),
          "carol@autoconf.test": ("Carol Autoconf", "carol-secret"),
          # a Microsoft account's address (Outlook.com): the DavMail gates
-         "megan@outlook.com": ("Megan Bowen", "megan-secret")}
+         "megan@outlook.com": ("Megan Bowen", "megan-secret"),
+         # a shared mailbox Megan may open (the davmail-shared gate)
+         "frontdesk@outlook.com": ("Front Desk", "frontdesk-secret")}
 EXT_ID = "sg-mail@stained-glass-os.org"
 
 

@@ -121,6 +121,42 @@ export class MicrosoftCalendars {
     return r;
   }
 
+  // File > Add Shared Mailbox: another mailbox the person may open (a
+  // shared mailbox, or one delegated to them), through their Microsoft
+  // account's gateway -- its folders a tree of their own beside theirs
+  async addSharedMailbox() {
+    await this.refresh();
+    const own = this.accounts.filter(a => a.linked && a.kind === "microsoft");
+    if (!own.length) {
+      await dialog({ title: "Add Shared Mailbox", body: "<p>Shared mailboxes are opened through a Microsoft 365 account set up in SG Mail (File &gt; Add Account).</p>" });
+      return null;
+    }
+    const body = h("div", {},
+      own.length > 1 ? h("div", { class: "form-row" }, h("label", { text: "Through:" }),
+        h("select", { id: "sm-account", style: "flex:1" }, ...own.map(a => h("option", { value: a.accountId, text: a.email })))) : "",
+      h("div", { class: "form-row" }, h("label", { text: "Mailbox:" }),
+        h("input", { type: "text", id: "sm-mailbox", style: "flex:1", placeholder: "Name or e-mail address", autocomplete: "off" })),
+      h("p", { style: "color:var(--muted)", text: "What the mailbox's owner or administrator allows you (read, or read and write) is what you can do in it." }));
+    const v = await dialog({ title: "Add Shared Mailbox", body, width: 460,
+      buttons: [{ label: "Add", primary: true, value: b => ({ account: b.querySelector("#sm-account")?.value || own[0].accountId, mailbox: b.querySelector("#sm-mailbox").value.trim() }) },
+        { label: "Cancel", value: null, cancel: true }] });
+    if (!v || !v.mailbox) return null;
+    const who = await this.app.calendar.resolvePerson(v.mailbox);
+    if (!who) {
+      await this.failed("The mailbox could not be added", `SG Mail does not know "${v.mailbox}". Type its e-mail address.`);
+      return null;
+    }
+    let r;
+    try {
+      r = await messenger.sgmail.msAddSharedMailbox(v.account, who.email);
+    } catch (e) {
+      r = { ok: false, error: String(e.message || e) };
+    }
+    if (r.ok) toast(`${who.email}: its folders are added`);
+    else await this.failed("The mailbox could not be added", r.error);
+    return r;
+  }
+
   // the Calendar's "Add calendar > Microsoft ..." : which account
   async chooseAndConnect() {
     this.accounts = await messenger.sgmail.msAccounts().catch(() => []);

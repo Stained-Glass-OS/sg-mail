@@ -410,8 +410,10 @@ export async function testDump(name, data) {
 }
 
 // the address books' contacts matching what was typed (MV3: query; MV2: quickSearch)
-export async function searchAddressBooks(term) {
+// remote: the organisation's directories too (LDAP books: a Microsoft
+// account's, through DavMail)
+export async function searchAddressBooks(term, remote = false) {
   const api = messenger.addressBooks.contacts || messenger.contacts;
-  if (api.query) return api.query({ searchString: term, includeRemote: false });
+  if (api.query) return api.query({ searchString: term, includeRemote: remote });
   return api.quickSearch(term);
 }

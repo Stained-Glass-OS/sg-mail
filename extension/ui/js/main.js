@@ -327,6 +327,7 @@ class App {
     showMenu([
       { header: "Account Information" },
       { label: "Add Account…", icon: "account-add", action: () => this.microsoft.addAccount() },
+      { label: "Add Shared Mailbox…", icon: "people", action: () => this.microsoft.addSharedMailbox() },
       { label: "Account Settings…", icon: "settings", action: () => messenger.sgmail.openTool("accountSettings") },
       { label: "Automatic Replies…", icon: "out-of-office", action: () => this.autoReplies.open() },
       { separator: true },
@@ -370,6 +371,7 @@ class App {
       ["new appointment", () => this.calendar.newEvent({})],
       ["new meeting", () => this.calendar.newEvent({ meeting: true })],
       ["add account", () => this.microsoft.addAccount()],
+      ["add shared mailbox delegate", () => this.microsoft.addSharedMailbox()],
       ["account settings", () => messenger.sgmail.openTool("accountSettings")],
       ["options settings preferences", () => messenger.sgmail.openTool("options")],
       ["address book contacts people", () => this.showModule("people")],

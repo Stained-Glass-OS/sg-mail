@@ -742,6 +742,36 @@
       "type": "string"
      }
     ]
+   },
+   {
+    "name": "setCalendarGroup",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "calendarId",
+      "type": "string"
+     },
+     {
+      "name": "group",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "name": "msAddSharedMailbox",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "accountId",
+      "type": "string"
+     },
+     {
+      "name": "mailbox",
+      "type": "string"
+     }
+    ]
    }
   ],
   "events": [

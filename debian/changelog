@@ -1,3 +1,36 @@
+sg-mail (0.1.0-10) unstable; urgency=medium
+
+  * Microsoft accounts (DavMail): what Outlook shows beside one's own
+    calendar and mailbox, as far as DavMail reaches.
+    - The organisation's directory: an LDAP address book on the account's
+      gateway (DavMail's LDAP: Microsoft's people search), so colleagues are
+      found by name -- in Open Shared Calendar, Team groups, Add Shared
+      Mailbox and the message window.
+    - Calendar groups: New Calendar Group, Move to Group, Rename, Remove
+      Group (its calendars kept); each group's box shows or hides all its
+      calendars. New Team Calendar Group: people by name or address (or a
+      contact group's members), each one's calendar as they share it, in
+      "Team: ..."; it says whose could not be opened and why (not shared;
+      a Microsoft 365 group or list, which DavMail cannot open).
+    - View > Side by Side: Day view with a column for each calendar shown.
+    - File > Add Shared Mailbox: a shared or delegated mailbox through the
+      account's gateway (DavMail's "OWN/MAILBOX" IMAP login, one's own
+      sign-in), its folders a tree of their own; asked first whether the
+      account may open it (no endless password prompts); the gateway gets
+      IMAP if it was set up for calendars only. Removing the account
+      removes its shared mailboxes, colleagues' calendars and directory.
+    - Not offered by DavMail, so not here: Outlook's automatic "My Team"
+      group (reporting lines), mailboxes delegated to one discovered
+      automatically, Microsoft 365 group calendars.
+  * Open Shared Calendar on a Microsoft account: "not shared with you"
+    instead of a network error (Microsoft's "not found" through DavMail).
+  * Gate: davmail-shared (new; stand-in with Radicale rights and a shared
+    Dovecot mailbox), 10 mutants, on Thunderbird 140 and 157. Helper:
+    DavMail's LDAP port per Microsoft account (block layout 0-15 services,
+    16-19 sign-in).
+
+ -- Stained Glass OS <dev@stained-glass.example>  Wed, 07 Oct 2026 01:00:00 +0000
+
 sg-mail (0.1.0-9) unstable; urgency=medium
 
   * Microsoft accounts (DavMail): an invitation accepted, tentatively

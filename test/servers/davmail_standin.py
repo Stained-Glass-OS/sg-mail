@@ -180,6 +180,13 @@ class H(http.server.BaseHTTPRequestHandler):
         c.request(self.command, path, body, headers)
         r = c.getresponse()
         data = r.read()
+        if r.status in (403, 404) and "/lists@" in path:
+            # a group's address (Microsoft 365): no mailbox Graph serves
+            return self.reply(404, b"MailboxNotEnabledForRESTAPI The mailbox is either inactive, soft-deleted, or is hosted on-premise.")
+        if r.status == 403:
+            # Microsoft (Graph), through DavMail: what one may not see is "not found"
+            note(f"{self.command} {self.path} 404 not shared")
+            return self.reply(404, b"ErrorItemNotFound The specified object was not found in the store.")
         # every mailbox's paths (one's own, and colleagues' shared calendars)
         data = re.sub(rb">/([^/<>]+(@|%40)[^/<>]+)/", rb">/users/\1/", data)
         out = {k: v for k, v in r.getheaders() if k.lower() in ("etag", "dav", "allow", "location", "sync-token")}
@@ -253,20 +260,34 @@ class Imap(socketserver.StreamRequestHandler):
                 return
             elif cmd == "LOGIN":
                 user, password = (imap_args(args) + ["", ""])[:2]
-                if WHITE and user.lower() != WHITE or not token_ok(user, password):
+                # "OWN/OTHER": another mailbox (shared, delegated) with one's
+                # own sign-in, as DavMail's IMAP takes it
+                own, _, other = user.partition("/")
+                if WHITE and own.lower() != WHITE or not token_ok(own, password):
                     note(f"IMAP LOGIN {user} NO")
-                    w(f"{tag} NO LOGIN failed: no valid refresh token found for {user}")
+                    w(f"{tag} NO LOGIN failed: no valid refresh token found for {own}")
                     continue
                 note(f"IMAP LOGIN {user} OK")
-                return self.splice(tag)
+                return self.splice(tag, other.lower() or None)
             else:
                 w(f"{tag} BAD command unrecognized or not allowed before LOGIN")
 
-    def splice(self, tag):
+    def splice(self, tag, other=None):
         up = socket.create_connection(hostport("SG_STANDIN_IMAP", "127.0.0.1:10143"))
         f = up.makefile("rb")
         f.readline()
         u, pw = upstream_user()
+        if other:
+            # the other mailbox's own login upstream (SG_STANDIN_MAILBOXES:
+            # {"address": "password"}): only the ones "shared" with one
+            import json
+            boxes = json.loads(os.environ.get("SG_STANDIN_MAILBOXES", "{}"))
+            if other not in boxes:
+                note(f"IMAP mailbox {other} NO")
+                self.wfile.write(f"{tag} NO LOGIN failed: no access to {other}\r\n".encode())
+                self.wfile.flush()
+                return
+            u, pw = other, boxes[other]
         up.sendall(f'x1 LOGIN "{u}" "{pw}"\r\n'.encode())
         while True:
             l = f.readline()

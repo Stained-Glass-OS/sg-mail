@@ -960,14 +960,6 @@
   "why": "DavMail's \"no valid refresh token\" not understood as Sign in again"
  },
  {
-  "name": "davmail-shared-kept",
-  "gate": "davmail-gate.py",
-  "file": "experiments/parent.js",
-  "find": " || (origin && c.uri?.spec.startsWith(origin))",
-  "replace": "",
-  "why": "a colleague's calendar opened through a removed account's gateway kept"
- },
- {
   "name": "davmail-mail-no-consent-hint",
   "gate": "davmail-mail-gate.py",
   "file": "ui/js/microsoft.js",
@@ -982,5 +974,77 @@
   "find": "const SG_MUTANT_DAVMAIL_ITIP = false;",
   "replace": "const SG_MUTANT_DAVMAIL_ITIP = true;",
   "why": "an invitation answered Thunderbird's way: a second copy, Exchange's own unanswered"
+ },
+ {
+  "name": "davmail-shared-no-ldap",
+  "gate": "davmail-shared-gate.py",
+  "file": "experiments/parent.js",
+  "find": "  if (link.ldap && !MailServices.ab.directories.some(",
+  "replace": "  if (false && !MailServices.ab.directories.some(",
+  "why": "no directory book (names not found in the organisation)"
+ },
+ {
+  "name": "davmail-shared-no-group",
+  "gate": "davmail-shared-gate.py",
+  "file": "experiments/parent.js",
+  "find": "          if (info.group) c.setProperty(\"sgmail.group\", String(info.group));",
+  "replace": "",
+  "why": "a Team group's calendars not put in the group"
+ },
+ {
+  "name": "davmail-shared-sbs-overlay",
+  "gate": "davmail-shared-gate.py",
+  "file": "ui/js/calendar.js",
+  "find": " && (!c.calendarId || e.calendarId === c.calendarId))",
+  "replace": ")",
+  "why": "side by side: every calendar's events in every column"
+ },
+ {
+  "name": "davmail-shared-group-box",
+  "gate": "davmail-shared-gate.py",
+  "file": "ui/js/calendar.js",
+  "find": "      head.addEventListener(\"click\", () => this.toggleGroup(list, allOn));",
+  "replace": "",
+  "why": "a calendar group's box does nothing"
+ },
+ {
+  "name": "davmail-shared-mailbox-login",
+  "gate": "davmail-shared-gate.py",
+  "file": "experiments/parent.js",
+  "find": "          const user = `${link.email}/${mailbox}`;",
+  "replace": "          const user = mailbox;",
+  "why": "the shared mailbox logged in as itself (DavMail needs OWN/MAILBOX)"
+ },
+ {
+  "name": "davmail-shared-kept",
+  "gate": "davmail-shared-gate.py",
+  "file": "experiments/parent.js",
+  "find": "              if (acct) MailServices.accounts.removeAccount(acct, true);",
+  "replace": "              void acct;",
+  "why": "a removed account's shared mailboxes kept"
+ },
+ {
+  "name": "davmail-shared-notfound-text",
+  "gate": "davmail-shared-gate.py",
+  "file": "experiments/parent.js",
+  "find": "r.status === 403 || /ErrorItemNotFound|ErrorAccessDenied|ErrorFolderNotFound/.test(r.text || \"\")",
+  "replace": "r.status === 403",
+  "why": "Microsoft's \"not found\" (a calendar not shared) shown as a network error"
+ },
+ {
+  "name": "davmail-shared-group-text",
+  "gate": "davmail-shared-gate.py",
+  "file": "experiments/parent.js",
+  "find": "/MailboxNotEnabledForRESTAPI/.test(r.text || \"\")",
+  "replace": "false",
+  "why": "a group's address answered with a network error"
+ },
+ {
+  "name": "davmail-shared-no-probe",
+  "gate": "davmail-shared-gate.py",
+  "file": "experiments/parent.js",
+  "find": "const SG_MUTANT_DAVMAIL_NO_PROBE = false;",
+  "replace": "const SG_MUTANT_DAVMAIL_NO_PROBE = true;",
+  "why": "a mailbox one may not open added anyway (Thunderbird then asks for a password again and again)"
  }
 ]
