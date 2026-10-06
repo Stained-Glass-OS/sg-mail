@@ -168,3 +168,37 @@ label { cursor: default; }
 .infobar .btn { min-height: 22px; padding: 1px 10px; min-width: 0; }
 
 ::-moz-selection { background: var(--selected); }
+
+/* ---- the Scheduling Assistant (the meeting window) ----------------------------------------------- */
+.sched { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 6px 12px 10px; gap: 6px; }
+.sa-bar { display: flex; align-items: center; gap: 6px; }
+.sa-nav { border: 0; background: transparent; padding: 3px; border-radius: 3px; display: inline-flex; color: var(--text); }
+.sa-nav:hover { background: var(--hover); }
+.sa-day { font-weight: 600; font-size: 15px; margin-left: 4px; }
+.sa-grid { flex: 1; min-height: 0; display: flex; border: 1px solid var(--border); border-radius: 3px; overflow: auto; }
+.sa-names { flex: none; width: 230px; border-right: 1px solid var(--border-strong); background: var(--pane); position: sticky; left: 0; z-index: 3; }
+.sa-name { height: 30px; display: flex; flex-direction: column; justify-content: center; padding: 0 10px; border-bottom: 1px solid var(--border); overflow: hidden; }
+.sa-name.sa-head { height: 26px; }
+.sa-name.all { font-weight: 600; }
+.sa-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sa-sub { color: var(--muted); font-size: 11px; line-height: 1.1; }
+.sa-add { width: 100%; border: 0 !important; background: transparent !important; box-shadow: none !important; padding: 2px 0; }
+.sa-scroll { flex: 1; overflow-x: auto; overflow-y: hidden; }
+.sa-timeline { position: relative; }
+.sa-hours { position: relative; height: 26px; border-bottom: 1px solid var(--border-strong); }
+.sa-hour { position: absolute; top: 0; height: 26px; padding: 5px 4px; font-size: 11px; color: var(--muted); border-left: 1px solid var(--border); }
+.sa-row { position: relative; height: 30px; border-bottom: 1px solid var(--border); }
+.sa-cell { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--border); background: color-mix(in srgb, var(--pane) 80%, var(--hover)); }
+.sa-cell.work { background: var(--bg); }
+.sa-cell::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; border-left: 1px dotted var(--border); }
+.sa-block { position: absolute; top: 5px; bottom: 5px; border-radius: 2px; }
+.sa-block.busy, .sa-key.busy { background: #0f6cbd; }
+.sa-block.tentative, .sa-key.tentative { background: repeating-linear-gradient(45deg, #0f6cbd 0 3px, color-mix(in srgb, #0f6cbd 30%, var(--bg)) 3px 6px); }
+.sa-block.unavailable, .sa-key.unavailable { background: #8764b8; }
+.sa-block.unknown, .sa-key.unknown { background: repeating-linear-gradient(-45deg, transparent 0 6px, color-mix(in srgb, var(--muted) 28%, transparent) 6px 8px); top: 0; bottom: 0; border-radius: 0; }
+:root.dark .sa-block.busy, :root.dark .sa-key.busy { background: #479ef5; }
+.sa-row.all .sa-block { background: #0f6cbd; opacity: .75; }
+.sa-meeting { position: absolute; top: 26px; bottom: 0; z-index: 2; pointer-events: none; border-left: 2px solid #107c10; border-right: 2px solid #c50f1f;
+  background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.sa-legend { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+.sa-key { display: inline-block; width: 14px; height: 10px; border-radius: 2px; margin-left: 10px; border: 1px solid var(--border); }

@@ -65,6 +65,18 @@ const ICONS = {
   "address-book": `<rect x="4" y="2.5" width="12" height="15" rx="1.5" ${S}/><circle cx="10" cy="8" r="2.2" ${S}/><path d="M6.8 13.8a3.4 3.4 0 0 1 6.4 0M2.5 6h2.5M2.5 10h2.5M2.5 14h2.5" ${S}/>`,
   "filter": `<path d="M3 4h14l-5.5 6.5V16l-3-1.5v-4z" ${S}/>`,
   "print": `<path d="M5.5 7.5v-4h9v4" ${S}/><rect x="2.5" y="7.5" width="15" height="6.5" rx="1.2" ${S}/><path d="M5.5 12h9v5h-9z" ${S}/>`,
+  // Quick Steps (a lightning bolt), a new one; Clean Up; Ignore; conversations
+  "quick-step": `<path d="M11.5 2.5L5 11h4.5l-1 6.5L15 9h-4.5z" fill="none" stroke="var(--accent)" stroke-width="1.3" stroke-linejoin="round"/>`,
+  "quick-new": `<path d="M10.5 2.5L4.5 10.5h4l-1 6" ${S}/><path d="M12 5.5L10 8.5" ${S}/>` + plus(14.5, 13.5),
+  "clean-up": `<path d="M12.5 2.5l-4 7M6 9.5l5 2.6-2.4 5.4H3.5L6 9.5zM5.5 17.5l1.5-3M8 17.5l1.6-3.6" ${S}/><path d="M14.5 12.5h3M16 11v3M15 4.5h2" ${A}/>`,
+  "ignore": envelope + `<circle cx="15" cy="14.5" r="3.6" fill="var(--bg, #fff)" stroke="#c50f1f" stroke-width="1.3"/><path d="M12.5 17l5-5" stroke="#c50f1f" stroke-width="1.3"/>`,
+  "conversation": `<path d="M3 4.5h10a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H8l-3 2.5V11.5H3a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z" ${S}/><path d="M15.5 8h1.5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-1v2l-2.5-2H9.5a1 1 0 0 1-1-1V13.5" ${A}/>`,
+  // Automatic Replies (an envelope with a return arrow), the Scheduling
+  // Assistant (a time grid), a shared calendar (two people's), a new task
+  "out-of-office": envelope + `<circle cx="15" cy="14.5" r="3.6" fill="var(--accent)"/><path d="M16.5 15.8v-1a1.3 1.3 0 0 0-1.3-1.3h-2.3m1-1l-1 1 1 1" stroke="#fff" stroke-width="1.1" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`,
+  "scheduling": `<rect x="2.5" y="3.5" width="15" height="13" rx="1.5" ${S}/><path d="M2.5 7.5h15M7 3.5v13M12 3.5v13" ${S}/><rect x="7.6" y="9" width="8.8" height="2.6" rx=".6" fill="var(--accent)"/>`,
+  "shared-calendar": calendarBase + `<circle cx="7.5" cy="11.5" r="1.5" ${S}/><path d="M5 15.5a2.6 2.6 0 0 1 5 0" ${S}/><circle cx="13" cy="11.5" r="1.5" ${A}/><path d="M10.6 15.5a2.6 2.6 0 0 1 4.8 0" ${A}/>`,
+  "task-new": `<rect x="3" y="3" width="12" height="12" rx="2" ${S}/><path d="M6 9l2 2 4-4.2" ${S}/>` + plus(15, 15),
   "close": `<path d="M5 5l10 10M15 5L5 15" ${S}/>`,
   "save": `<path d="M4 3.5h9.5l3 3V15a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 15V5A1.5 1.5 0 0 1 5 3.5z" ${S}/><path d="M6.5 3.5v4h6v-4M6.5 16.5v-5h7v5" ${S}/>`,
   "send": `<path d="M3 10L17 3l-4 14-3.3-5.7z" ${S}/><path d="M9.7 11.3L17 3" ${A}/>`,

@@ -48,6 +48,7 @@ export class ReadingPane {
   }
 
   showEmpty(text = "Select an item to read") {
+    this.cards = null;
     clearTimeout(this.readTimer);
     this.message = null;
     this.state = { empty: true };
@@ -112,6 +113,113 @@ export class ReadingPane {
         if (this.message && this.message.id === msg.id) this.actions.markRead([msg], true);
       }, this.actions.readDelay ?? 1000);
     }
+  }
+
+  // a conversation: its messages newest first, each a card that opens to
+  // its text (the newest and the unread ones open), wherever they are kept
+  // (one's own replies in Sent Items); Reply / Reply All / Forward on each
+  async showConversation(items, { subject } = {}) {
+    clearTimeout(this.readTimer);
+    const token = (this.token = Symbol("conversation"));
+    this.message = items[0].msg;
+    this.state = { conversation: true, items };
+    const people = [];
+    for (const it of items) {
+      const n = parseAddress(it.msg.author);
+      if (!people.includes(n.name || n.email)) people.push(n.name || n.email);
+    }
+    const head = h("div", { class: "rp-head cv-head" },
+      h("h1", { class: "rp-subject", text: subject || items[0].msg.subject || "(no subject)" }),
+      h("div", { class: "rp-to", text: `${items.length} messages · ${people.join(", ")}` }));
+    const list = h("div", { class: "cv-list", id: "cv-list" });
+    const open = new Set(items.filter((it, i) => i === 0 || !it.msg.read).map(it => it.msg.id));
+    this.cards = [];
+    for (const it of items) {
+      const card = this.conversationCard(it, open.has(it.msg.id), token);
+      this.cards.push(card);
+      list.append(card.el);
+    }
+    this.el.replaceChildren(head, list);
+    // the unread ones read once shown for a moment
+    const unread = items.filter(it => !it.msg.read && open.has(it.msg.id)).map(it => it.msg);
+    if (unread.length) {
+      this.readTimer = setTimeout(() => {
+        if (this.token === token) this.actions.markRead(unread, true);
+      }, this.actions.readDelay ?? 1000);
+    }
+  }
+
+  conversationCard(it, expanded, token) {
+    const msg = it.msg;
+    const sender = parseAddress(msg.author);
+    const av = avatar(sender.name || sender.email);
+    const el = h("div", { class: "cv-item" + (msg.read ? "" : " unread"), "data-id": msg.id });
+    const top = h("div", { class: "cv-top" },
+      h("div", { class: "avatar small", style: `background:${av.color}`, text: av.initials }),
+      h("div", { class: "cv-who" },
+        h("div", { class: "cv-from", text: sender.name || sender.email }),
+        h("div", { class: "cv-sub", text: it.folderName && !it.here ? `${it.folderName} · ${fmt.full(msg.date)}` : fmt.full(msg.date) })),
+      h("div", { class: "cv-snippet" }));
+    const acts = h("div", { class: "rp-actions" });
+    for (const [id, ic, label, fn] of [["reply", "reply", "Reply", "reply"], ["replyall", "reply-all", "Reply All", "replyAll"], ["forward", "forward", "Forward", "forward"]]) {
+      const b = h("button", { class: "rb", title: label, "data-act": id, html: `${icon(ic, 16)}<span>${esc(label)}</span>` });
+      b.addEventListener("click", e => {
+        e.stopPropagation();
+        this.actions[fn](msg);
+      });
+      acts.append(b);
+    }
+    top.append(acts);
+    const body = h("div", { class: "cv-body" });
+    el.append(top, body);
+    const card = { el, msg, it, expanded: false, text: "" };
+    const setOpen = async on => {
+      card.expanded = on;
+      el.classList.toggle("open", on);
+      if (on && !body.firstChild) await this.fillCard(card, body, token);
+    };
+    top.addEventListener("click", () => setOpen(!card.expanded));
+    card.setOpen = setOpen;
+    setOpen(expanded);
+    // the first words while closed
+    messenger.messages.listInlineTextParts(msg.id).then(async parts => {
+      const plain = parts.find(p => p.contentType === "text/plain");
+      let text = plain ? plain.content : "";
+      if (!text) {
+        const html = parts.find(p => p.contentType === "text/html");
+        if (html) text = await messenger.messengerUtilities.convertToPlainText(html.content);
+      }
+      top.querySelector(".cv-snippet").textContent = text.replace(/^>.*$/gm, "").replace(/\s+/g, " ").trim().slice(0, 160);
+    }).catch(() => {});
+    return card;
+  }
+
+  async fillCard(card, body, token) {
+    let full;
+    try {
+      full = await messenger.messages.getFull(card.msg.id);
+    } catch (e) {
+      body.textContent = "This message could not be opened.";
+      return;
+    }
+    if (this.token !== token) return;
+    const b = bodyOf(full);
+    const plain = b.html === null;
+    const clean = plain ? { html: textToHtml(b.plain || ""), head: "", remote: false } : sanitize(b.html, { cid: new Map(), allowRemote: false });
+    const dark = document.documentElement.classList.contains("dark");
+    const iframe = h("iframe", { class: "cv-frame", sandbox: "allow-same-origin allow-popups allow-popups-to-escape-sandbox", title: "Message", referrerpolicy: "no-referrer" });
+    iframe.srcdoc = frameDocument(clean, { allowRemote: false, dark, plain });
+    iframe.addEventListener("load", () => {
+      this.wireFrame(iframe);
+      try {
+        card.text = iframe.contentDocument.body.innerText;
+        iframe.style.height = Math.min(4000, iframe.contentDocument.documentElement.scrollHeight + 4) + "px";
+      } catch (e) {
+        // not loaded
+      }
+    });
+    body.classList.toggle("plain", plain);
+    body.replaceChildren(iframe);
   }
 
   render() {
@@ -306,6 +414,14 @@ export class ReadingPane {
 
   dump() {
     if (!this.message) return { empty: true };
+    if (this.state.conversation) {
+      return {
+        id: this.message.id,
+        subject: this.el.querySelector(".rp-subject")?.textContent || "",
+        conversation: (this.cards || []).map(c => ({ id: c.msg.id, subject: c.msg.subject, from: parseAddress(c.msg.author).name || parseAddress(c.msg.author).email,
+          folder: c.it.folderName || "", expanded: c.expanded, text: (c.text || "").slice(0, 600) })),
+      };
+    }
     const f = this.el.querySelector("#rp-frame");
     let text = "", images = [];
     try {

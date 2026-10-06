@@ -19,11 +19,20 @@ var lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   cal: "resource:///modules/calendar/calUtils.sys.mjs",
   CalEvent: "resource:///modules/CalEvent.sys.mjs",
+  CalTodo: "resource:///modules/CalTodo.sys.mjs",
   CalAttendee: "resource:///modules/CalAttendee.sys.mjs",
   CalAlarm: "resource:///modules/CalAlarm.sys.mjs",
   CalRecurrenceInfo: "resource:///modules/CalRecurrenceInfo.sys.mjs",
 });
 var { ExtensionError } = ExtensionUtils;
+// what the shared calendars and automatic replies need in this scope
+for (const name of ["fetch", "DOMParser", "TextDecoder", "btoa", "URL"]) {
+  try {
+    if (!(name in globalThis)) Cu.importGlobalProperties([name]);
+  } catch (e) {
+    // not offered here
+  }
+}
 
 // Thunderbird's own bars hidden while our tab is showing; its tab strip
 // back (without its own mail tab) while one of its tools is open.
@@ -291,6 +300,392 @@ function applyEvent(item, ev) {
 // The iTIP state of messages shown in the reading pane: message id -> state
 const itipStates = new Map();
 
+// ---- conversations ----------------------------------------------------------------------
+
+// the Message-IDs a message names: its own, and those it answers (References,
+// or In-Reply-To when there are none: Thunderbird keeps them as one list)
+function referencesOf(hdr) {
+  const refs = [];
+  for (let i = 0; i < hdr.numReferences; i++) {
+    const r = hdr.getStringReference(i);
+    if (r) refs.push(r);
+  }
+  return refs;
+}
+
+// the folders of an account a conversation is looked for in: all but
+// Deleted Items, Junk Email and the Outbox (Sent Items is where one's own
+// replies are)
+function conversationFolders(server) {
+  const skip = Ci.nsMsgFolderFlags.Trash | Ci.nsMsgFolderFlags.Junk | Ci.nsMsgFolderFlags.Queue | Ci.nsMsgFolderFlags.Virtual;
+  return server.rootFolder.descendants.filter(f => !(f.flags & skip) && !f.noSelect);
+}
+
+// ---- tasks --------------------------------------------------------------------------------
+
+function taskObject(item, calendar) {
+  const status = item.status || "NONE";
+  return {
+    calendarId: calendar.id,
+    calendarName: calendar.name,
+    color: calendar.getProperty("color") || "#0078d4",
+    readOnly: !!calendar.readOnly,
+    id: item.id,
+    title: item.title || "",
+    description: item.getProperty("DESCRIPTION") || "",
+    start: jsDate(item.entryDate),
+    due: jsDate(item.dueDate),
+    completed: !!item.isCompleted,
+    completedAt: jsDate(item.completedDate),
+    percent: item.percentComplete || 0,
+    status: item.getProperty("X-SGMAIL-STATUS") || status,
+    priority: item.priority || 0,
+    reminder: reminderOf(item),
+  };
+}
+
+// a day as a calendar date (no time): tasks are due on days, as Outlook's
+function calDate(ms) {
+  return ms ? calDateTime(ms, true) : null;
+}
+
+// ---- free/busy ------------------------------------------------------------------------------
+
+const FB_TYPES = { 0: "unknown", 1: "free", 2: "busy", 4: "unavailable", 8: "tentative" };
+
+// one attendee's busy times from Thunderbird's free/busy providers (a
+// CalDAV server with scheduling: the attendee's own calendar server)
+function serverFreeBusy(email, start, end) {
+  return new Promise(resolve => {
+    const out = [];
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      resolve(out);
+    };
+    try {
+      lazy.cal.freeBusyService.getFreeBusyIntervals("mailto:" + email, start, end, Ci.calIFreeBusyInterval.BUSY_ALL, {
+        QueryInterface: ChromeUtils.generateQI(["calIGenericOperationListener"]),
+        onResult(op, result) {
+          for (const iv of result || []) {
+            const type = FB_TYPES[iv.freeBusyType] || "busy";
+            if (type === "free" || type === "unknown") continue;
+            out.push({ start: jsDate(iv.interval.start), end: jsDate(iv.interval.end), type });
+          }
+          if (!op || !op.isPending) finish();
+        },
+      });
+    } catch (e) {
+      console.error("sg-mail: free/busy", e);
+      finish();
+    }
+    setTimeout(finish, 15000);
+  });
+}
+
+// busy times from events: what Show As says (Free counts as nothing)
+function busyFromEvents(items) {
+  const out = [];
+  for (const item of items) {
+    if (item.getProperty("TRANSP") === "TRANSPARENT") continue;
+    if (item.status === "CANCELLED") continue;
+    const s = jsDate(item.startDate), e = jsDate(item.endDate || item.startDate);
+    out.push({ start: s, end: Math.max(e, s), type: item.status === "TENTATIVE" ? "tentative" : "busy", title: "" });
+  }
+  return out;
+}
+
+// ---- WebDAV (shared calendars) ---------------------------------------------------------------
+
+// the password Thunderbird keeps for a CalDAV server, for its user
+async function davPassword(origin, username) {
+  for (const l of await Services.logins.searchLoginsAsync({ origin })) {
+    if (!username || l.username === username) return { username: l.username, password: l.password };
+  }
+  return null;
+}
+
+async function davRequest(url, method, body, auth, depth = "1") {
+  const headers = { "Content-Type": "application/xml; charset=utf-8", Depth: depth };
+  if (auth) headers.Authorization = "Basic " + btoa(unescape(encodeURIComponent(`${auth.username}:${auth.password}`)));
+  const r = await fetch(url, { method, headers, body, credentials: "omit", cache: "no-store", redirect: "follow" });
+  return { status: r.status, text: await r.text(), url: r.url };
+}
+
+const DAV = "DAV:", CALDAV = "urn:ietf:params:xml:ns:caldav", ICAL = "http://apple.com/ns/ical/";
+
+// the collections a PROPFIND (depth 1) answered with: calendars, their names,
+// colours and whether this user may write in them
+function davCalendars(xml, base) {
+  const doc = new DOMParser().parseFromString(xml, "application/xml");
+  const out = [];
+  for (const resp of doc.getElementsByTagNameNS(DAV, "response")) {
+    const href = resp.getElementsByTagNameNS(DAV, "href")[0]?.textContent || "";
+    let ok = null;
+    for (const ps of resp.getElementsByTagNameNS(DAV, "propstat")) {
+      if (/\s200\s/.test(" " + (ps.getElementsByTagNameNS(DAV, "status")[0]?.textContent || "") + " ")) ok = ps;
+    }
+    if (!ok) continue;
+    const rt = ok.getElementsByTagNameNS(DAV, "resourcetype")[0];
+    if (!rt || !rt.getElementsByTagNameNS(CALDAV, "calendar").length) continue;
+    const comps = [...ok.getElementsByTagNameNS(CALDAV, "comp")].map(c => (c.getAttribute("name") || "").toUpperCase());
+    if (comps.length && !comps.includes("VEVENT")) continue;
+    const privs = [...ok.getElementsByTagNameNS(DAV, "privilege")].map(p => p.firstElementChild?.localName || "");
+    out.push({
+      url: new URL(href, base).href,
+      name: ok.getElementsByTagNameNS(DAV, "displayname")[0]?.textContent || decodeURIComponent(href.replace(/\/$/, "").split("/").pop()),
+      color: (ok.getElementsByTagNameNS(ICAL, "calendar-color")[0]?.textContent || "").slice(0, 7),
+      writable: privs.some(p => p === "write" || p === "write-content" || p === "all"),
+      readable: !privs.length || privs.some(p => p === "read" || p === "all"),
+    });
+  }
+  return out;
+}
+
+const PROPFIND_CALENDARS = '<?xml version="1.0" encoding="utf-8"?><D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:A="http://apple.com/ns/ical/">' +
+  "<D:prop><D:resourcetype/><D:displayname/><A:calendar-color/><D:current-user-privilege-set/><C:supported-calendar-component-set/></D:prop></D:propfind>";
+
+// ---- ManageSieve (RFC 5804): automatic replies kept on the mail server ------------------------
+
+const SIEVE_BEGIN = "# SG Mail: automatic replies (begin)";
+const SIEVE_END = "# SG Mail: automatic replies (end)";
+
+function sieveQuote(s) {
+  return '"' + String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
+}
+
+// the vacation block SG Mail writes: the reply, from start to end (UTC), to
+// each sender once a week, never to lists or other automatic mail
+function sieveBlock(st, addresses) {
+  const conds = [];
+  if (st.start) conds.push(`currentdate :zone "+0000" :value "ge" "iso8601" ${sieveQuote(new Date(st.start).toISOString().slice(0, 19))}`);
+  if (st.end) conds.push(`currentdate :zone "+0000" :value "lt" "iso8601" ${sieveQuote(new Date(st.end).toISOString().slice(0, 19))}`);
+  const text = String(st.text || "").replace(/\r?\n/g, "\r\n");
+  const lines = [
+    SIEVE_BEGIN,
+    "# sg-mail: " + JSON.stringify({ start: st.start || 0, end: st.end || 0, text: st.text || "" }),
+    'require ["vacation", "date", "relational", "variables"];',
+    'set "sgsubject" "";',
+    'if header :matches "subject" "*" { set "sgsubject" "${1}"; }',
+    `if allof(${["true", ...conds].join(", ")}) {`,
+    `  vacation :days 7 :addresses [${addresses.map(sieveQuote).join(", ")}] :subject "Automatic reply: \${sgsubject}" text:`,
+    ...text.split("\r\n").map(l => (l.startsWith(".") ? "." + l : l)),
+    ".",
+    ";",
+    "}",
+    SIEVE_END,
+  ];
+  return lines.join("\r\n") + "\r\n";
+}
+
+// a script without SG Mail's block, and the settings the block held
+function sieveSplit(script) {
+  const a = script.indexOf(SIEVE_BEGIN), b = script.indexOf(SIEVE_END);
+  if (a < 0 || b < a) return { rest: script, settings: null };
+  const block = script.slice(a, b);
+  let settings = null;
+  const m = block.match(/^# sg-mail: (.*)$/m);
+  if (m) {
+    try {
+      settings = JSON.parse(m[1]);
+    } catch (e) {
+      settings = {};
+    }
+  }
+  return { rest: script.slice(0, a) + script.slice(b + SIEVE_END.length).replace(/^\r?\n/, ""), settings };
+}
+
+// SG Mail's block in a script of the person's own: after its require lines
+// (Sieve wants them first), the rest of their rules after it
+function sieveMerge(rest, block) {
+  const m = rest.match(/^(?:\s*(?:#[^\n]*\n|require\s+[^;]*;))*\s*/);
+  const head = m ? m[0] : "";
+  return head + (head && !head.endsWith("\n") ? "\r\n" : "") + block + rest.slice(head.length);
+}
+
+class SieveClient {
+  constructor(host, port) {
+    this.host = host;
+    this.port = port;
+    this.buffer = "";
+    this.waiters = [];
+  }
+
+  open() {
+    const TCP = globalThis.TCPSocket || mainWindow()?.TCPSocket;
+    if (!TCP) throw new ExtensionError("No sockets here");
+    return new Promise((resolve, reject) => {
+      const s = new TCP(this.host, this.port, { binaryType: "string" });
+      this.socket = s;
+      const timer = setTimeout(() => reject(new ExtensionError("The server did not answer")), 15000);
+      s.onopen = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      s.ondata = ev => {
+        this.buffer += typeof ev.data === "string" ? ev.data : new TextDecoder().decode(ev.data);
+        this.pump();
+      };
+      s.onerror = ev => {
+        clearTimeout(timer);
+        this.failed = ev?.name || "error";
+        reject(new ExtensionError(`ManageSieve ${this.host}:${this.port}: ${ev?.message || ev?.name || "no connection"}`));
+        this.pump();
+      };
+      s.onclose = () => {
+        this.closed = true;
+        this.pump();
+      };
+    });
+  }
+
+  // the server's answer to one command: its lines up to OK, NO or BYE
+  // (with the literals {n} in them read whole)
+  pump() {
+    while (this.waiters.length) {
+      const parsed = this.parse();
+      if (!parsed) {
+        if (this.closed || this.failed) this.waiters.shift().reject(new ExtensionError("The connection closed"));
+        else return;
+        continue;
+      }
+      this.waiters.shift().resolve(parsed);
+    }
+  }
+
+  parse() {
+    const lines = [];
+    let pos = 0;
+    const buf = this.buffer;
+    while (true) {
+      const nl = buf.indexOf("\r\n", pos);
+      if (nl < 0) return null;
+      let line = buf.slice(pos, nl);
+      pos = nl + 2;
+      const lit = line.match(/\{(\d+)\+?\}$/);
+      if (lit) {
+        // TCPSocket strings are bytes: the literal's length counts bytes
+        const n = Number(lit[1]);
+        if (buf.length < pos + n) return null;
+        line = line.slice(0, -lit[0].length) + JSON.stringify(decodeURIComponent(escape(buf.slice(pos, pos + n))));
+        pos += n;
+        const nl2 = buf.indexOf("\r\n", pos);
+        if (nl2 < 0) return null;
+        line += buf.slice(pos, nl2);
+        pos = nl2 + 2;
+      }
+      lines.push(line);
+      if (/^(OK|NO|BYE)\b/i.test(line)) {
+        this.buffer = buf.slice(pos);
+        return { lines: lines.slice(0, -1), status: line.split(/\s/)[0].toUpperCase(), last: line };
+      }
+    }
+  }
+
+  read() {
+    return new Promise((resolve, reject) => {
+      this.waiters.push({ resolve, reject });
+      this.pump();
+      setTimeout(() => reject(new ExtensionError("The server did not answer")), 20000);
+    });
+  }
+
+  async command(text) {
+    this.socket.send(unescape(encodeURIComponent(text)) + "\r\n");
+    const r = await this.read();
+    if (r.status !== "OK") throw new ExtensionError(`ManageSieve: ${r.last.replace(/^NO\s*/i, "")}`);
+    return r;
+  }
+
+  static literal(text) {
+    const bytes = unescape(encodeURIComponent(text));
+    return `{${bytes.length}+}\r\n${text}`;
+  }
+
+  capabilities(lines) {
+    const caps = {};
+    for (const l of lines) {
+      const m = l.match(/^"([^"]+)"(?:\s+"(.*)")?$/);
+      if (m) caps[m[1].toUpperCase()] = m[2] || "";
+    }
+    return caps;
+  }
+
+  async connect(username, password) {
+    await this.open();
+    let r = await this.read();
+    let caps = this.capabilities(r.lines);
+    const local = /^(127\.|localhost$|::1$)/.test(this.host);
+    if ("STARTTLS" in caps) {
+      await this.command("STARTTLS");
+      this.socket.upgradeToSecure();
+      r = await this.read();
+      caps = this.capabilities(r.lines);
+      this.secure = true;
+    } else if (!local) {
+      throw new ExtensionError("The server offers no encryption: SG Mail does not send the password unprotected");
+    }
+    if (!(caps.SIEVE || "").split(/\s+/).includes("vacation")) this.noVacation = true;
+    const plain = btoa(unescape(encodeURIComponent(`\0${username}\0${password}`)));
+    await this.command(`AUTHENTICATE "PLAIN" "${plain}"`);
+    return caps;
+  }
+
+  async scripts() {
+    const r = await this.command("LISTSCRIPTS");
+    return r.lines.map(l => {
+      const m = l.match(/^"((?:[^"\\]|\\.)*)"(\s+ACTIVE)?/i);
+      return m ? { name: JSON.parse(`"${m[1]}"`), active: !!m[2] } : null;
+    }).filter(Boolean);
+  }
+
+  async get(name) {
+    const r = await this.command(`GETSCRIPT ${sieveQuote(name)}`);
+    const l = r.lines.join("\n");
+    try {
+      return JSON.parse(l.slice(l.indexOf('"')));
+    } catch (e) {
+      return "";
+    }
+  }
+
+  close() {
+    try {
+      this.socket.send("LOGOUT\r\n");
+      this.socket.close();
+    } catch (e) {
+      // gone
+    }
+  }
+}
+
+// the ManageSieve server and login for an account: the IMAP server's host,
+// its user and the password Thunderbird keeps for it
+async function sieveFor(accountId, where) {
+  const account = MailServices.accounts.getAccount(accountId);
+  if (!account) throw new ExtensionError("No such account");
+  const server = account.incomingServer;
+  if (server.type !== "imap") throw new ExtensionError("Automatic replies on the server need an IMAP account");
+  if (server.authMethod === Ci.nsMsgAuthMethod.OAuth2) throw new ExtensionError("This account signs in with its provider's page (OAuth2): SG Mail cannot reach its server's rules");
+  let host = server.hostName, port = 4190;
+  if (where) {
+    const m = String(where).match(/^\s*\[?([^\]\s]+?)\]?(?::(\d+))?\s*$/);
+    if (m) {
+      host = m[1];
+      if (m[2]) port = Number(m[2]);
+    }
+  }
+  let password = server.password;
+  if (!password) {
+    const l = await davPassword("imap://" + server.hostName, server.username);
+    password = l && l.password;
+  }
+  if (!password) throw new ExtensionError("SG Mail does not know this account's password yet: get mail once first");
+  const addresses = MailServices.accounts.getIdentitiesForServer(server).map(i => i.email).filter(Boolean);
+  return { host, port, username: server.username, password, addresses };
+}
+
 this.sgmail = class extends ExtensionCommon.ExtensionAPI {
   onShutdown() {
     itipStates.clear();
@@ -510,6 +905,11 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
           if (identity.organization) fields.organization = identity.organization;
           if (details.references) fields.references = details.references;
           if (details.priority) fields.priority = details.priority;
+          // automatic replies say so (RFC 3834), and keep no copy in Sent Items
+          for (const [k, v] of Object.entries(details.headers || {})) {
+            if (/^(Auto-Submitted|X-Auto-Response-Suppress)$/i.test(k)) fields.setRawHeader(k, String(v));
+          }
+          if (details.noCopy) fields.fcc = "nocopy://";
           fields.useMultipartAlternative = true;
           const tmpFiles = [];
           for (const a of details.attachments || []) {
@@ -539,7 +939,13 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
             forward: Ci.nsIMsgCompType.ForwardInline,
             draft: Ci.nsIMsgCompType.Draft,
           };
-          const original = details.originalMessageId ? msgHdr(details.originalMessageId) : null;
+          // the original may be gone meanwhile (Quick Steps: Reply & Delete)
+          let original = null;
+          try {
+            original = details.originalMessageId ? msgHdr(details.originalMessageId) : null;
+          } catch (e) {
+            original = null;
+          }
           const originalURI = original ? original.folder.getUriForMsg(original) : "";
           const replace = details.replaceDraftMessageId ? msgHdr(details.replaceDraftMessageId) : null;
 
@@ -553,6 +959,7 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
               onStopSending(msgId, status) {
                 if (!Components.isSuccessCode(status)) resolve({ ok: false, error: `Sending failed (0x${(status >>> 0).toString(16)})` });
                 else if (mode !== Ci.nsIMsgSend.nsMsgDeliverNow) resolve({ ok: true, messageId: msgId, queued: mode === Ci.nsIMsgSend.nsMsgQueueForLater });
+                else if (details.noCopy) resolve({ ok: true, messageId: msgId, copied: false });
                 else this.sent = msgId;
               },
               onGetDraftFolderURI() {},
@@ -758,12 +1165,15 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
             disabled: !!c.getProperty("disabled"),
             identityKey: c.getProperty("imip.identity.key") || "",
             uri: c.uri ? c.uri.spec : "",
+            // another person's calendar opened here (their address)
+            shared: c.getProperty("sgmail.shared") || "",
+            tasks: c.getProperty("capabilities.tasks.supported") !== false,
           }));
         },
 
         // Outlook always has a Calendar: a local one when there is none to write in
         async ensureCalendar() {
-          const writable = lazy.cal.manager.getCalendars().filter(c => !c.readOnly && !c.getProperty("disabled"));
+          const writable = lazy.cal.manager.getCalendars().filter(c => !c.readOnly && !c.getProperty("disabled") && !c.getProperty("sgmail.shared"));
           if (writable.length) return null;
           const c = lazy.cal.manager.createCalendar("storage", Services.io.newURI("moz-storage-calendar://"));
           c.name = "Calendar";
@@ -972,6 +1382,333 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
             actions,
             event: ev ? eventObject(ev, ev.calendar || { id: "", name: "", getProperty: () => null, readOnly: true }) : null,
           };
+        },
+
+        // ---- conversations --------------------------------------------------------
+
+        // what puts messages in one conversation: their Message-IDs and the
+        // ones they answer
+        async conversationInfo(ids) {
+          const out = [];
+          for (const id of ids) {
+            let hdr;
+            try {
+              hdr = msgHdr(id);
+            } catch (e) {
+              continue;
+            }
+            out.push({ id, msgid: hdr.messageId || "", refs: referencesOf(hdr) });
+          }
+          return out;
+        },
+
+        // the messages of a conversation anywhere in the account (Sent Items
+        // too; not Deleted Items or Junk Email): those whose Message-ID is
+        // one of msgids or that answer one, and so on
+        async conversationMessages(folderId, msgids) {
+          const server = folderOf(folderId).server;
+          const want = new Set(msgids.filter(Boolean));
+          const found = new Map();
+          const folders = conversationFolders(server);
+          for (let pass = 0; pass < 3; pass++) {
+            const before = want.size;
+            for (const folder of folders) {
+              let db;
+              try {
+                db = folder.msgDatabase;
+              } catch (e) {
+                continue;
+              }
+              if (!db) continue;
+              let n = 0;
+              for (const hdr of db.enumerateMessages()) {
+                if (++n > 50000) break;
+                const key = folder.URI + "#" + hdr.messageKey;
+                if (found.has(key)) continue;
+                const refs = referencesOf(hdr);
+                if (want.has(hdr.messageId) || refs.some(r => want.has(r))) {
+                  found.set(key, hdr);
+                  want.add(hdr.messageId);
+                  for (const r of refs) want.add(r);
+                }
+              }
+            }
+            if (want.size === before) break;
+          }
+          const out = [];
+          for (const hdr of found.values()) {
+            try {
+              const m = extension.messageManager.convert(hdr);
+              out.push({ id: m.id, msgid: hdr.messageId, refs: referencesOf(hdr), sent: !!(hdr.folder.flags & Ci.nsMsgFolderFlags.SentMail),
+                folderId: m.folder ? m.folder.id : "", folderName: hdr.folder.prettyName, date: hdr.date / 1000 });
+            } catch (e) {
+              // not one the extension can see
+            }
+          }
+          out.sort((a, b) => a.date - b.date);
+          return out;
+        },
+
+        // ---- tasks (Thunderbird's calendar tasks: VTODO) ---------------------------
+
+        async taskItems(calendarIds, includeCompleted = true) {
+          const filter = Ci.calICalendar.ITEM_FILTER_TYPE_TODO |
+            (includeCompleted ? Ci.calICalendar.ITEM_FILTER_COMPLETED_ALL : Ci.calICalendar.ITEM_FILTER_COMPLETED_NO);
+          const out = [];
+          for (const id of calendarIds) {
+            const calendar = lazy.cal.manager.getCalendarById(id);
+            if (!calendar || calendar.getProperty("disabled")) continue;
+            if (calendar.getProperty("capabilities.tasks.supported") === false) continue;
+            try {
+              for (const item of await itemsOf(calendar, filter, null, null)) out.push(taskObject(item, calendar));
+            } catch (e) {
+              console.error("sg-mail: tasks", calendar.name, e);
+            }
+          }
+          return out;
+        },
+
+        async saveTask(task) {
+          const calendar = calendarById(task.calendarId);
+          if (calendar.readOnly) throw new ExtensionError("This task list is read-only.");
+          let old = null, item;
+          if (task.id) {
+            old = await calendar.getItem(task.id);
+            if (!old) throw new ExtensionError(`No task ${task.id}`);
+            item = old.clone();
+          } else {
+            item = new lazy.CalTodo();
+            item.id = lazy.cal.getUUID();
+          }
+          if ("title" in task) item.title = task.title || "";
+          if ("description" in task) {
+            if (task.description) item.setProperty("DESCRIPTION", task.description);
+            else item.deleteProperty("DESCRIPTION");
+          }
+          if ("start" in task) item.entryDate = calDate(task.start);
+          if ("due" in task) item.dueDate = calDate(task.due);
+          if ("priority" in task) item.priority = task.priority || 0;
+          if ("status" in task || "completed" in task || "percent" in task) {
+            let status = task.status || (task.completed ? "COMPLETED" : item.status || "NEEDS-ACTION");
+            if (task.completed === false && status === "COMPLETED") status = "NEEDS-ACTION";
+            // Outlook's Waiting on someone else and Deferred: kept beside the iCalendar status
+            if (status === "WAITING" || status === "DEFERRED") {
+              item.setProperty("X-SGMAIL-STATUS", status);
+              status = "NEEDS-ACTION";
+            } else {
+              item.deleteProperty("X-SGMAIL-STATUS");
+            }
+            if (status === "COMPLETED") {
+              item.isCompleted = true;
+              item.completedDate = lazy.cal.dtz.jsDateToDateTime(new Date(), lazy.cal.dtz.defaultTimezone);
+              item.percentComplete = 100;
+              item.status = "COMPLETED";
+            } else {
+              item.isCompleted = false;
+              item.completedDate = null;
+              item.status = status === "NONE" ? null : status;
+              item.percentComplete = Math.max(0, Math.min(99, task.percent ?? (status === "IN-PROCESS" ? Math.max(1, item.percentComplete) : 0)));
+            }
+          }
+          if ("reminder" in task) {
+            item.clearAlarms();
+            if (task.reminder >= 0 && item.dueDate) {
+              const alarm = new lazy.CalAlarm();
+              alarm.related = Ci.calIAlarm.ALARM_RELATED_START;
+              alarm.offset = lazy.cal.createDuration();
+              alarm.offset.inSeconds = -60 * task.reminder;
+              alarm.action = "DISPLAY";
+              item.addAlarm(alarm);
+            }
+          }
+          const saved = old ? await calendar.modifyItem(item, old) : await calendar.addItem(item);
+          return { calendarId: calendar.id, id: saved.id };
+        },
+
+        async deleteTask(calendarId, id) {
+          const calendar = calendarById(calendarId);
+          const item = await calendar.getItem(id);
+          if (item) await calendar.deleteItem(item);
+          return true;
+        },
+
+        // ---- free/busy: the Scheduling Assistant -------------------------------------
+
+        // each attendee's busy times in a range: one's own calendars; the
+        // calendars of theirs this person has opened (shared calendars); the
+        // attendee's calendar server where it offers free/busy (CalDAV
+        // scheduling). Nothing known: "no information".
+        async freeBusy(emails, startMs, endMs) {
+          const start = lazy.cal.dtz.jsDateToDateTime(new Date(startMs), lazy.cal.dtz.defaultTimezone);
+          const end = lazy.cal.dtz.jsDateToDateTime(new Date(endMs), lazy.cal.dtz.defaultTimezone);
+          const mine = myIdentityEmails();
+          const filter = Ci.calICalendar.ITEM_FILTER_TYPE_EVENT | Ci.calICalendar.ITEM_FILTER_CLASS_OCCURRENCES;
+          const calendars = lazy.cal.manager.getCalendars().filter(c => !c.getProperty("disabled"));
+          const out = [];
+          for (const raw of emails) {
+            const email = String(raw || "").toLowerCase();
+            if (!email) continue;
+            let intervals = [], sources = [];
+            const own = mine.has(email) ? calendars.filter(c => !c.getProperty("sgmail.shared")) :
+              calendars.filter(c => (c.getProperty("sgmail.shared") || "").toLowerCase() === email);
+            for (const c of own) {
+              try {
+                intervals.push(...busyFromEvents(await itemsOf(c, filter, start, end)));
+                if (!sources.includes("calendar")) sources.push("calendar");
+              } catch (e) {
+                console.error("sg-mail: free/busy of", c.name, e);
+              }
+            }
+            if (!mine.has(email)) {
+              const server = await serverFreeBusy(email, start, end);
+              if (server.length) {
+                intervals.push(...server);
+                sources.push("server");
+              }
+            }
+            intervals = intervals.filter(iv => iv.end > startMs && iv.start < endMs).sort((a, b) => a.start - b.start);
+            out.push({ email, known: sources.length > 0, sources, intervals });
+          }
+          return out;
+        },
+
+        // ---- shared and delegated calendars --------------------------------------------
+
+        // another person's calendars on the CalDAV server one's own calendar
+        // is on, that this person may read: their calendar home found the way
+        // servers lay them out (one's own user in the path, theirs instead)
+        async findSharedCalendars(email) {
+          try {
+            return await sg._findSharedCalendars(email);
+          } catch (e) {
+            if (e instanceof ExtensionError) throw e;
+            console.error("sg-mail: shared calendars", e);
+            throw new ExtensionError(String(e && e.message || e));
+          }
+        },
+
+        async _findSharedCalendars(email) {
+          email = String(email || "").trim();
+          if (!email) throw new ExtensionError("Type a name or an address");
+          const local = email.split("@")[0];
+          const mineCals = lazy.cal.manager.getCalendars().filter(c => c.type === "caldav" && !c.getProperty("sgmail.shared"));
+          if (!mineCals.length) throw new ExtensionError("Shared calendars are opened from your calendar's server (CalDAV); you have no calendar there");
+          const tried = new Set();
+          const found = [];
+          let lastError = "";
+          for (const c of mineCals) {
+            const uri = new URL(c.uri.spec);
+            const user = c.getProperty("username") || "";
+            const auth = await davPassword(uri.origin, user);
+            if (!auth) {
+              lastError = `SG Mail does not know the password for ${uri.host}`;
+              continue;
+            }
+            const segs = uri.pathname.split("/");
+            const candidates = [];
+            const names = [user, user.split("@")[0]].filter(Boolean);
+            for (let i = 0; i < segs.length; i++) {
+              const seg = decodeURIComponent(segs[i]);
+              if (!names.includes(seg)) continue;
+              const theirs = seg.includes("@") ? email : local;
+              const head = segs.slice(0, i).join("/") + "/" + encodeURIComponent(theirs).replace(/%40/g, "@") + "/";
+              candidates.push(head);
+              // DavMail and others: the person's calendar folder under their home
+              if (segs[i + 1]) candidates.push(head + segs[i + 1] + "/");
+            }
+            candidates.push(`/users/${email}/calendar/`, `/${email}/`, `/${local}/`);
+            for (const path of candidates) {
+              const url = uri.origin + path;
+              if (tried.has(url)) continue;
+              tried.add(url);
+              try {
+                const r = await davRequest(url, "PROPFIND", PROPFIND_CALENDARS, auth, "1");
+                if (r.status === 207) {
+                  for (const cal of davCalendars(r.text, url)) {
+                    if (cal.readable && !found.some(f => f.url === cal.url)) found.push(Object.assign(cal, { username: auth.username }));
+                  }
+                } else if (r.status === 403) {
+                  lastError = `${email} has not shared a calendar with you`;
+                }
+              } catch (e) {
+                lastError = String(e.message || e);
+              }
+              if (found.length) break;
+            }
+            if (found.length) break;
+          }
+          return { calendars: found, error: found.length ? "" : (lastError || `No calendar of ${email} was found that you may open`) };
+        },
+
+        async openSharedCalendar(info) {
+          const existing = lazy.cal.manager.getCalendars().find(c => c.uri && c.uri.spec === info.url);
+          if (existing) return existing.id;
+          const c = lazy.cal.manager.createCalendar("caldav", Services.io.newURI(info.url));
+          c.name = info.name;
+          c.setProperty("color", info.color || "#8764b8");
+          c.setProperty("username", info.username || "");
+          c.setProperty("sgmail.shared", String(info.owner || "").toLowerCase());
+          c.setProperty("cache.enabled", true);
+          if (!info.writable) c.readOnly = true;
+          // no invitations sent or answered from another person's calendar
+          c.setProperty("imip.identity.disabled", true);
+          lazy.cal.manager.registerCalendar(c);
+          return c.id;
+        },
+
+        async removeCalendar(calendarId) {
+          const c = calendarById(calendarId);
+          lazy.cal.manager.unregisterCalendar(c);
+          return true;
+        },
+
+        // ---- automatic replies on the server (ManageSieve) -----------------------------
+
+        // whether the account's server keeps automatic replies (ManageSieve
+        // with vacation), and the ones SG Mail set there
+        async sieveStatus(accountId, where) {
+          let s;
+          try {
+            s = await sieveFor(accountId, where);
+          } catch (e) {
+            return { available: false, error: e.message };
+          }
+          const client = new SieveClient(s.host, s.port);
+          try {
+            await client.connect(s.username, s.password);
+            if (client.noVacation) return { available: false, error: "The server's rules cannot send automatic replies (no Sieve vacation)" };
+            const scripts = await client.scripts();
+            const active = scripts.find(x => x.active);
+            let settings = null;
+            if (active) settings = sieveSplit(await client.get(active.name)).settings;
+            return { available: true, server: `${s.host}:${s.port}`, secure: !!client.secure, script: active ? active.name : "", on: !!settings, settings };
+          } catch (e) {
+            return { available: false, error: e.message };
+          } finally {
+            client.close();
+          }
+        },
+
+        // set (or take away) SG Mail's automatic reply in the account's
+        // active Sieve script, leaving the person's own rules as they are
+        async sieveSetVacation(accountId, where, settings) {
+          const s = await sieveFor(accountId, where);
+          const client = new SieveClient(s.host, s.port);
+          try {
+            await client.connect(s.username, s.password);
+            if (client.noVacation) throw new ExtensionError("The server's rules cannot send automatic replies (no Sieve vacation)");
+            const scripts = await client.scripts();
+            const active = scripts.find(x => x.active);
+            const name = active ? active.name : "sg-mail";
+            const { rest } = sieveSplit(active ? await client.get(active.name) : "");
+            const script = settings && settings.on ? sieveMerge(rest, sieveBlock(settings, s.addresses)) : rest;
+            await client.command(`CHECKSCRIPT ${SieveClient.literal(script)}`);
+            await client.command(`PUTSCRIPT ${sieveQuote(name)} ${SieveClient.literal(script)}`);
+            if (!active) await client.command(`SETACTIVE ${sieveQuote(name)}`);
+            return { ok: true, script: name };
+          } finally {
+            client.close();
+          }
         },
 
         onCalendarChanged: new ExtensionCommon.EventManager({

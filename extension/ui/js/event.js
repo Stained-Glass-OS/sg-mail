@@ -14,6 +14,7 @@ import { icon } from "./icons.js";
 import { h, $, $$, esc, fmt, toast, dialog, applyLook, parseAddress, splitAddresses, formatAddress, validEmail, debounce, addDays, startOfDay, testDump, searchAddressBooks } from "./util.js";
 import { Ribbon } from "./ribbon.js";
 import { installTestHook } from "./testhook.js";
+import { SchedulingAssistant } from "./scheduling.js";
 
 const params = new URLSearchParams(location.search);
 const state = {
@@ -89,8 +90,39 @@ async function init() {
     $("#bars").append(h("div", { class: "infobar", html: `${icon("info", 16)}<span>${state.ev.readOnly ? "This calendar is read-only." : "You are not the organizer of this meeting: changes you make stay in your calendar."}</span>` }));
   }
   state.dirty = false;
+  state.sched = new SchedulingAssistant($("#sched"), {
+    getTimes: () => {
+      const allDay = $("#all-day").checked;
+      const start = readDate("start-date", "start-time").getTime();
+      let end = readDate("end-date", "end-time").getTime();
+      if (allDay) end = addDays(startOfDay(new Date(end)), 1).getTime();
+      return { start, end: Math.max(end, start), allDay };
+    },
+    setTimes: (start, end) => {
+      const s = new Date(start), e = new Date(end);
+      $("#start-date").value = dateValue(s);
+      $("#start-time").value = timeValue(s);
+      $("#end-date").value = dateValue(e);
+      $("#end-time").value = timeValue(e);
+      $("#start-date").dispatchEvent(new Event("sync"));
+      state.dirty = true;
+    },
+    getAttendees: () => splitAddresses($("#attendees").value).map(parseAddress).filter(a => a.email),
+    addAttendee: text => {
+      const v = $("#attendees").value.trim().replace(/[;,]\s*$/, "");
+      $("#attendees").value = (v ? v + "; " : "") + text;
+      state.dirty = true;
+    },
+    me: () => {
+      const calendar = state.calendars.find(c => c.id === $("#calendar").value);
+      const ident = (calendar && calendar.identityKey && state.identities.find(i => i.id === calendar.identityKey)) || state.identities[0];
+      if (state.ev.organizer && !state.ev.iAmOrganizer) return state.ev.organizer;
+      return ident ? { name: ident.name, email: ident.email } : null;
+    },
+  });
   window.sgmailEvent = { state, save, dump };
-  installTestHook("event", { dump, save: () => !setTimeout(save, 50), close: () => !setTimeout(() => window.close(), 50), setRecurrence: a => {
+  installTestHook("event", { dump, save: () => !setTimeout(save, 50), close: () => !setTimeout(() => window.close(), 50),
+    schedule: () => state.sched.dump(), showScheduling: a => showScheduling(a.on !== false), setRecurrence: a => {
     state.recurrence = a;
     updateInfo();
     return true;
@@ -105,6 +137,20 @@ async function init() {
   } });
   testDump("event-ready.json", dump());
   setTimeout(() => $("#title").focus(), 0);
+}
+
+// the Scheduling Assistant in place of the form (a meeting's), and back
+async function showScheduling(on) {
+  if (on && !state.meeting) {
+    setMeeting(true);
+  }
+  state.scheduling = !!on;
+  $("#sched").hidden = !on;
+  $(".e-form").hidden = on;
+  $("#description").hidden = on;
+  buildRibbon();
+  if (on) await state.sched.show();
+  return true;
 }
 
 function setMeeting(on) {
@@ -141,6 +187,10 @@ function wire() {
     lastStart = ns;
   };
   $("#start-date").addEventListener("change", moveEnd);
+  // times set by the Scheduling Assistant: the length kept from there on
+  $("#start-date").addEventListener("sync", () => {
+    lastStart = readDate("start-date", "start-time").getTime();
+  });
   $("#start-time").addEventListener("change", moveEnd);
   $("#all-day").addEventListener("change", () => {
     syncAllDay();
@@ -169,6 +219,10 @@ function buildRibbon() {
         { id: "save-close", icon: state.meeting ? "send" : "save", label: state.meeting ? (state.isNew ? "Send" : "Send Update") : "Save & Close", large: true, action: () => save() },
         { id: "delete", icon: "delete", label: "Delete", large: true, action: () => remove() },
       ] },
+      { label: "Show", items: [
+        { id: "show-appointment", icon: "calendar", label: state.meeting ? "Meeting" : "Appointment", large: true, action: () => showScheduling(false) },
+        { id: "show-scheduling", icon: "scheduling", label: "Scheduling Assistant", large: true, action: () => showScheduling(true) },
+      ] },
       { label: "Attendees", items: [
         { id: "invite", icon: "meeting-new", label: state.meeting ? "Cancel Invitation" : "Invite Attendees", large: true, action: () => {
           setMeeting(!state.meeting);
@@ -188,6 +242,8 @@ function buildRibbon() {
       ] },
     ] }],
   });
+  ribbon.toggle("show-scheduling", !!state.scheduling);
+  ribbon.toggle("show-appointment", !state.scheduling);
   return ribbon;
 }
 

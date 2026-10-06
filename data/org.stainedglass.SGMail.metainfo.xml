@@ -9,10 +9,12 @@
   <description>
     <p>SG Mail is Stained Glass OS's mail and calendar program. Its window is
     arranged the way many office workers know: a ribbon, the folder pane, the
-    message list grouped by date with a Focused Inbox, the reading pane, a
+    message list grouped by date (or by conversation) with a Focused Inbox,
+    Quick Steps, Clean Up and Ignore Conversation, the reading pane, a
     calendar with Day, Work Week, Week and Month views where appointments are
-    dragged and resized with the mouse, and People for contacts and contact
-    groups.</p>
+    dragged and resized with the mouse, shared calendars and a Scheduling
+    Assistant for meetings, Tasks with a To-Do List and To-Do Bar, Automatic
+    Replies, and People for contacts and contact groups.</p>
     <p>It is built on Mozilla Thunderbird, which does the work underneath:
     IMAP, POP and SMTP accounts (with the provider's own sign-in page for
     Microsoft and Google accounts), the calendar (local, CalDAV and Internet

@@ -6,7 +6,11 @@ a real mail provider):
     with the users alice@example.test and bob@example.test;
   - an SMTP server (aiosmtpd: AUTH PLAIN/LOGIN) that keeps every message it
     is given (smtp/N.eml) and delivers it to local users' inboxes;
-  - Radicale (CalDAV, 127.0.0.1:CALDAV_PORT) with alice's calendar "Work";
+  - Radicale (CalDAV, 127.0.0.1:CALDAV_PORT) with alice's calendar "Work"
+    (and, given rights, what one user may see of another's);
+  - with sieve=True: Dovecot's ManageSieve (SIEVE_PORT, STARTTLS) and its
+    delivery agent with Sieve (deliver_lda), whose vacation replies are kept
+    in sieve-out/ (its sendmail);
   - a web server: the account-setup lookups (ISPDB, autoconfig), and
     pictures whose fetches it counts (the remote-content gates);
   - Xvfb, and Thunderbird with a scratch profile laid out as the sg-mail
@@ -37,6 +41,7 @@ sys.path.insert(0, HERE)
 from marionette import Marionette  # noqa: E402
 
 IMAP_PORT, IMAPS_PORT, SMTP_PORT, CALDAV_PORT, HTTP_PORT, MARIONETTE_PORT = 10143, 10993, 10025, 15232, 18080, 12828
+SIEVE_PORT = 14190
 USERS = {"alice@example.test": ("Alice Example", "alice-secret"), "bob@example.test": ("Bob Builder", "bob-secret"),
          "carol@autoconf.test": ("Carol Autoconf", "carol-secret")}
 EXT_ID = "sg-mail@stained-glass-os.org"
@@ -85,7 +90,7 @@ def make_http(root, hits, extra):
 
 
 class Env:
-    def __init__(self, name, dark=False, extra_prefs=None, with_caldav=True, accounts=("alice@example.test",), keep=False):
+    def __init__(self, name, dark=False, extra_prefs=None, with_caldav=True, accounts=("alice@example.test",), keep=False, sieve=False, radicale_rights=None):
         self.name = name
         # SG_GATE_TAG: runs of one gate side by side (the mutants) keep apart
         tag = os.environ.get("SG_GATE_TAG", "")
@@ -100,6 +105,8 @@ class Env:
         self.dark = dark
         self.extra_prefs = extra_prefs or {}
         self.with_caldav = with_caldav
+        self.sieve = sieve
+        self.radicale_rights = radicale_rights
         self.accounts = accounts
         self.smtp_dir = os.path.join(self.dir, "smtp")
         os.makedirs(self.smtp_dir)
@@ -142,14 +149,78 @@ class Env:
         import pwd
         user = pwd.getpwuid(os.getuid()).pw_name
         group = grp.getgrgid(os.getgid()).gr_name
+        sieve = ""
+        if self.sieve:
+            # ManageSieve, and Sieve in the delivery agent; its replies kept by a sendmail of ours
+            os.makedirs(f"{d}/sieve-out")
+            with open(f"{d}/sendmail.sh", "w") as f:
+                f.write(f'#!/bin/sh\ncat > "{d}/sieve-out/$(date +%s%N).eml"\n')
+            os.chmod(f"{d}/sendmail.sh", 0o755)
+            sieve = f"""
+sieve_script personal {{
+  driver = file
+  path = ~/sieve
+  active_path = ~/.dovecot.sieve
+}}
+service managesieve-login {{
+  chroot =
+  user = {user}
+  inet_listener sieve {{
+    port = {SIEVE_PORT}
+  }}
+}}
+service managesieve {{
+  user = {user}
+}}
+protocol lda {{
+  mail_plugins {{
+    sieve = yes
+  }}
+}}
+sendmail_path = {d}/sendmail.sh
+postmaster_address = postmaster@example.test
+"""
         for k, v in {"@DIR@": d, "@PORT@": str(IMAP_PORT), "@SPORT@": str(IMAPS_PORT), "@USER@": user, "@GROUP@": group,
-                     "@UID@": str(os.getuid()), "@GID@": str(os.getgid()), "@DEBUG@": ""}.items():
+                     "@UID@": str(os.getuid()), "@GID@": str(os.getgid()), "@DEBUG@": "",
+                     "@PROTOCOLS@": "imap sieve" if self.sieve else "imap", "@SIEVE@": sieve}.items():
             conf = conf.replace(k, v)
         with open(f"{d}/dovecot.conf", "w") as f:
             f.write(conf)
         self.procs.append(subprocess.Popen(["dovecot", "-c", f"{d}/dovecot.conf", "-F"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
         wait_port(IMAP_PORT)
+        if self.sieve:
+            wait_port(SIEVE_PORT)
         self.dovecot_dir = d
+
+    def deliver_lda(self, raw, user="alice@example.test", sender="bob@example.test"):
+        """A message delivered by Dovecot's delivery agent (its Sieve runs):
+        (exit code, output)."""
+        r = subprocess.run(["/usr/lib/dovecot/dovecot-lda", "-c", f"{self.dovecot_dir}/dovecot.conf", "-d", user, "-f", sender],
+                           input=raw if isinstance(raw, bytes) else raw.encode(), capture_output=True, timeout=60)
+        return r.returncode, (r.stdout + r.stderr).decode("utf-8", "replace")
+
+    def sieve_replies(self):
+        """The messages Sieve sent (vacation replies), oldest first."""
+        d = f"{self.dovecot_dir}/sieve-out"
+        return [open(os.path.join(d, n), "rb").read().decode("utf-8", "replace") for n in sorted(os.listdir(d))]
+
+    def dovecot_home(self, user="alice@example.test"):
+        """A user's home as Dovecot has it (mail/<the address's local part>)."""
+        return os.path.join(self.dovecot_dir, "mail", user.split("@")[0])
+
+    def sieve_script(self, user="alice@example.test"):
+        """The user's active Sieve script, as Dovecot keeps it (or None)."""
+        p = os.path.join(self.dovecot_home(user), ".dovecot.sieve")
+        return open(p).read() if os.path.exists(p) else None
+
+    def trust_test_ca(self):
+        """Thunderbird trusts the scratch CA (as a real server's would be)."""
+        pem = open(f"{self.pki}/ca.crt").read()
+        b64 = "".join(l for l in pem.splitlines() if l and not l.startswith("-----"))
+        return self.chrome("""
+          const db = Cc["@mozilla.org/security/x509certdb;1"].getService(Ci.nsIX509CertDB);
+          db.addCertFromBase64(args, "C,,");
+          return true;""", b64)
 
     def start_smtp(self):
         script = os.path.join(SRC, "test/servers/smtp_server.py")
@@ -166,6 +237,12 @@ class Env:
         with open(f"{d}/config", "w") as f:
             f.write(f"[server]\nhosts = 127.0.0.1:{CALDAV_PORT}\n[auth]\ntype = htpasswd\nhtpasswd_filename = {d}/users\nhtpasswd_encryption = plain\n"
                     f"[storage]\nfilesystem_folder = {d}/collections\n[logging]\nlevel = warning\n")
+            if self.radicale_rights:
+                # who may see whose collections (shared calendars)
+                f.write(f"[rights]\ntype = from_file\nfile = {d}/rights\n")
+        if self.radicale_rights:
+            with open(f"{d}/rights", "w") as f:
+                f.write(self.radicale_rights)
         self.procs.append(subprocess.Popen([sys.executable, "-m", "radicale", "--config", f"{d}/config"],
                                            stdout=open(os.path.join(self.dir, "radicale.log"), "w"), stderr=subprocess.STDOUT))
         wait_port(CALDAV_PORT)
@@ -173,6 +250,21 @@ class Env:
         body = ('<?xml version="1.0" encoding="utf-8"?><C:mkcalendar xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">'
                 '<D:set><D:prop><D:displayname>Work</D:displayname></D:prop></D:set></C:mkcalendar>')
         self.dav("MKCALENDAR", "/alice@example.test/work/", body)
+
+    def make_calendar(self, user, path, name, color=None):
+        """Another CalDAV calendar (MKCALENDAR as its owner)."""
+        props = f"<D:displayname>{name}</D:displayname>" + (f'<A:calendar-color xmlns:A="http://apple.com/ns/ical/">{color}</A:calendar-color>' if color else "")
+        body = ('<?xml version="1.0" encoding="utf-8"?><C:mkcalendar xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">'
+                f'<D:set><D:prop>{props}</D:prop></D:set></C:mkcalendar>')
+        return self.dav("MKCALENDAR", path, body, user=user)
+
+    def put_event(self, user, path, uid, summary, start, end, transp="OPAQUE", status=None):
+        """An event put in a CalDAV calendar (UTC times, epoch seconds)."""
+        f = lambda t: time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(t))
+        ics = ("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//SG Mail gate//EN\r\nBEGIN:VEVENT\r\n"
+               f"UID:{uid}\r\nDTSTAMP:{f(time.time())}\r\nDTSTART:{f(start)}\r\nDTEND:{f(end)}\r\nSUMMARY:{summary}\r\nTRANSP:{transp}\r\n"
+               + (f"STATUS:{status}\r\n" if status else "") + "END:VEVENT\r\nEND:VCALENDAR\r\n")
+        return self.dav("PUT", path + uid + ".ics", ics, user=user, headers={"Content-Type": "text/calendar; charset=utf-8"})
 
     def dav(self, method, path, body="", user="alice@example.test", headers=None):
         c = http.client.HTTPConnection("127.0.0.1", CALDAV_PORT, timeout=20)
@@ -259,8 +351,11 @@ class Env:
             typ, data = c.search(None, "ALL")
             for num in data[0].split():
                 typ, msg = c.fetch(num, "(FLAGS RFC822)")
-                flags = msg[0][0].decode()
-                out.append((flags, msg[0][1]))
+                # (a flag changed meanwhile comes as an extra, untagged line)
+                for item in msg or []:
+                    if isinstance(item, tuple):
+                        out.append((item[0].decode(), item[1]))
+                        break
         c.logout()
         return out
 

@@ -96,6 +96,14 @@ const COMMANDS = {
     return { x: Math.round((window.mozInnerScreenX + r.left + (a.px !== undefined ? a.px : r.width * (a.fx ?? 0.5))) * s),
       y: Math.round((window.mozInnerScreenY + r.top + (a.py !== undefined ? a.py : r.height * (a.fy ?? 0.5))) * s) };
   },
+  // a choice made in a <select> (the nth one matching), as by the mouse
+  selectOption(a) {
+    const el = find(a.selector, { index: a.nth || 0 });
+    el.selectedIndex = a.index;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    return el.value;
+  },
   focus(a) {
     find(a.selector, a).focus();
     return true;

@@ -461,6 +461,179 @@
       "type": "string"
      }
     ]
+   },
+   {
+    "name": "conversationInfo",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "ids",
+      "type": "array",
+      "items": {
+       "type": "integer"
+      }
+     }
+    ]
+   },
+   {
+    "name": "conversationMessages",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "folderId",
+      "type": "string"
+     },
+     {
+      "name": "msgids",
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   {
+    "name": "taskItems",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "calendarIds",
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "includeCompleted",
+      "type": "boolean",
+      "optional": true
+     }
+    ]
+   },
+   {
+    "name": "saveTask",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "task",
+      "type": "object",
+      "additionalProperties": {
+       "type": "any"
+      }
+     }
+    ]
+   },
+   {
+    "name": "deleteTask",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "calendarId",
+      "type": "string"
+     },
+     {
+      "name": "id",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "name": "freeBusy",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "emails",
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "startMs",
+      "type": "number"
+     },
+     {
+      "name": "endMs",
+      "type": "number"
+     }
+    ]
+   },
+   {
+    "name": "findSharedCalendars",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "email",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "name": "openSharedCalendar",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "info",
+      "type": "object",
+      "additionalProperties": {
+       "type": "any"
+      }
+     }
+    ]
+   },
+   {
+    "name": "removeCalendar",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "calendarId",
+      "type": "string"
+     }
+    ]
+   },
+   {
+    "name": "sieveStatus",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "accountId",
+      "type": "string"
+     },
+     {
+      "name": "where",
+      "type": "any",
+      "optional": true
+     }
+    ]
+   },
+   {
+    "name": "sieveSetVacation",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "accountId",
+      "type": "string"
+     },
+     {
+      "name": "where",
+      "type": "any"
+     },
+     {
+      "name": "settings",
+      "type": "any"
+     }
+    ]
    }
   ],
   "events": [

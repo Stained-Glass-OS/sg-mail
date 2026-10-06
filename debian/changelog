@@ -1,3 +1,40 @@
+sg-mail (0.1.0-4) unstable; urgency=medium
+
+  * Conversations: View > Show as Conversations (remembered) groups the
+    messages of a conversation (References / In-Reply-To) into one row with
+    its count, opened by its arrow or the Right key; the reading pane shows
+    the whole conversation newest first, one's own replies from Sent Items
+    too, each message a card.
+  * Clean Up (Conversation, Folder): messages a later reply quotes whole go
+    to Deleted Items; unread, flagged and categorized ones stay. Ignore
+    Conversation: the conversation and its later messages (also after a
+    restart) go to Deleted Items; Stop Ignoring Conversation there.
+  * Quick Steps (Home, the message's menu, Ctrl+Shift+1..9): Move to: ?,
+    To Manager, Team Email, Done, Reply & Delete, Create New; First Time
+    Setup; Manage Quick Steps (edit, duplicate, reorder, delete, reset).
+    A reply sends even when its original was moved meanwhile.
+  * Tasks (Ctrl+4): the To-Do List (calendar tasks and flagged mail by due
+    day) and each calendar's tasks; Type a new task, the task window, Mark
+    Complete, Follow Up (also on mail), views; the To-Do Bar beside the
+    mail. Tasks are Thunderbird's VTODOs (CalDAV or local).
+  * The meeting window's Scheduling Assistant: attendees' busy times from
+    one's own calendars, their shared calendars and their calendar server's
+    free/busy (CalDAV scheduling); AutoPick Next; a click moves the meeting.
+  * Open Shared Calendar: a colleague's calendar on one's CalDAV server, as
+    they share it (read, or edit as a delegate), under Shared Calendars.
+  * Automatic Replies (File): on the account's server where it keeps Sieve
+    rules (ManageSieve, STARTTLS; the person's own rules kept), else from
+    this computer while SG Mail runs (labelled so; once a sender, never to
+    bulk mail, Auto-Submitted, no copy in Sent Items).
+  * Gates: conversations, quicksteps, tasks, scheduling, autoreply (new);
+    look (conversation and Tasks screenshots, light and dark). The test
+    root gains Dovecot's Sieve and ManageSieve (build/mkroot.sh; the root's
+    name has a revision, root-tb-r2, so older roots stay usable); Radicale
+    sharing rights; make test-mutation runs on the root make test uses.
+    45 new mutants (103 in all), all killed.
+
+ -- Stained Glass OS <dev@stained-glass.example>  Tue, 06 Oct 2026 18:00:00 +0000
+
 sg-mail (0.1.0-3) unstable; urgency=medium
 
   * Calendar by the mouse: appointments dragged to another time or day and

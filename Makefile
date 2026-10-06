@@ -22,10 +22,13 @@ PREFIX  ?= /usr
 # TB_DEB=path/thunderbird_*.deb: the gates against that Thunderbird package
 # (sg-image's, Mozilla's build) put over Debian's, in a root of its own
 TB_DEB  ?=
+# ROOT_REV: a new name whenever build/mkroot.sh's packages change (an older
+# root stays usable for checkouts that still want it)
+ROOT_REV = r2
 ifneq ($(TB_DEB),)
-ROOT    ?= /var/tmp/sgmail/root-tb-$(shell dpkg-deb -f $(TB_DEB) Version | tr : _)
+ROOT    ?= /var/tmp/sgmail/root-tb-$(ROOT_REV)-$(shell dpkg-deb -f $(TB_DEB) Version | tr : _)
 else
-ROOT    ?= /var/tmp/sgmail/root-tb
+ROOT    ?= /var/tmp/sgmail/root-tb-$(ROOT_REV)
 endif
 PY      ?= python3
 GATES   ?= $(sort $(wildcard test/gate/*-gate.py))
@@ -75,7 +78,7 @@ test: lint xpi root
 
 test-mutation: xpi root
 	@sh test/launcher-gate.sh --mutants
-	@$(PY) test/mutate.py $(GATES)
+	@SG_ROOT=$(ROOT) $(PY) test/mutate.py $(GATES)
 
 deb:
 	dpkg-buildpackage -us -uc -b

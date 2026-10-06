@@ -2,15 +2,15 @@
 # Make SG Mail's test root: Debian trixie (with its security updates) with
 # Thunderbird, Xvfb, ImageMagick, Dovecot, Radicale and aiosmtpd; rootless
 # (mmdebstrap --mode=unshare, needs /etc/subuid), read-only once made.
-#   build/mkroot.sh [ROOT] [THUNDERBIRD_DEB]   (default /var/tmp/sgmail/root-tb)
+#   build/mkroot.sh [ROOT] [THUNDERBIRD_DEB]   (default /var/tmp/sgmail/root-tb-r2)
 # THUNDERBIRD_DEB: a thunderbird package to put over Debian's, as apt does on
 # an installed machine (Stained Glass OS's own, Mozilla's build: sg-image
 # thunderbird/); `make test TB_DEB=...` makes and uses such a root.
 set -eu
-ROOT=${1:-/var/tmp/sgmail/root-tb}
+ROOT=${1:-/var/tmp/sgmail/root-tb-r2}
 DEB=${2:-}
 PKGS="ca-certificates python3 thunderbird xvfb xauth x11-utils x11-apps xdotool imagemagick
-dbus dbus-bin dbus-x11 python3-aiosmtpd radicale dovecot-imapd openssl zip unzip file
+dbus dbus-bin dbus-x11 python3-aiosmtpd radicale dovecot-imapd dovecot-sieve dovecot-managesieved openssl zip unzip file
 fonts-liberation2 fonts-dejavu-core fonts-noto-color-emoji fonts-inter"
 [ ! -e "$ROOT" ] || { echo "$ROOT exists"; exit 1; }
 set --

@@ -61,10 +61,15 @@ async function init() {
   });
   try {
     await prefill();
+    // Quick Steps: a forward to (or a new message for) the addresses it keeps
+    if (params.get("to") && !params.get("mailto")) $("#to").value = params.get("to");
+    if (params.get("subject") && !params.get("mailto")) $("#subject").value = params.get("subject");
   } catch (e) {
     console.error("sg-mail: compose", e);
     infobar("The original message could not be read: " + e.message);
   }
+  // the original is read: a Quick Step may move or delete it now
+  messenger.runtime.sendMessage({ type: "sgmail-compose-prefilled", originalId: state.originalId }).catch(() => {});
   state.dirty = false;
   updateTitle();
   // Outlook saves an unsent message every few minutes

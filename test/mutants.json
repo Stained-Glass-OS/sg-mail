@@ -462,5 +462,365 @@
   "find": "          try {\n            win.SendUnsentMessages();\n          } catch (e) {\n            console.error(\"sg-mail: send unsent\", e);\n          }",
   "replace": "          win.SendUnsentMessages();",
   "why": "Send/Receive reporting an error when there is no Outbox yet"
+ },
+ {
+  "name": "conv-grouping",
+  "gate": "conversations-gate.py",
+  "file": "ui/js/msglist.js",
+  "find": "    if (!this.conversations) return visible.map(m => ({ msg: m }));",
+  "replace": "    if (true) return visible.map(m => ({ msg: m }));",
+  "why": "Show as Conversations grouping nothing"
+ },
+ {
+  "name": "conv-references",
+  "gate": "conversations-gate.py",
+  "file": "ui/js/conversations.js",
+  "find": "    for (const r of x.refs || []) union(own, r);",
+  "replace": "",
+  "why": "replies not put with what they answer"
+ },
+ {
+  "name": "conv-sent-items",
+  "gate": "conversations-gate.py",
+  "file": "ui/js/mail.js",
+  "find": "    for (const x of found) {\n      if (items.has(x.id)) continue;",
+  "replace": "    for (const x of []) {\n      if (items.has(x.id)) continue;",
+  "why": "the conversation without one's own replies from Sent Items"
+ },
+ {
+  "name": "conv-remembered",
+  "gate": "conversations-gate.py",
+  "file": "ui/js/mail.js",
+  "find": "      this.list.conversations = !!st.conversations;",
+  "replace": "      this.list.conversations = false;",
+  "why": "Show as Conversations forgotten at the next start"
+ },
+ {
+  "name": "conv-arrow-keys",
+  "gate": "conversations-gate.py",
+  "file": "ui/js/msglist.js",
+  "find": "      if (e.key === \"ArrowRight\") {\n        if (!this.expanded.has(conv)) this.expand(conv, true);",
+  "replace": "      if (e.key === \"ArrowRight\") {\n        if (false) this.expand(conv, true);",
+  "why": "the Right key not opening a conversation"
+ },
+ {
+  "name": "conv-cleanup-quoted",
+  "gate": "conversations-gate.py",
+  "file": "ui/js/conversations.js",
+  "find": "      cleanText(b.text).includes(t));",
+  "replace": "      true);",
+  "why": "Clean Up moving messages the reply does not quote"
+ },
+ {
+  "name": "conv-cleanup-unread",
+  "gate": "conversations-gate.py",
+  "file": "ui/js/conversations.js",
+  "find": "    if (!m.read || m.flagged || (m.tags || []).length) continue;",
+  "replace": "    if ((m.tags || []).length) continue;",
+  "why": "Clean Up moving unread and flagged messages"
+ },
+ {
+  "name": "conv-ignore-replies",
+  "gate": "conversations-gate.py",
+  "file": "ui/js/mail.js",
+  "find": "    return !!x && (this.ignored.has(x.msgid) || (x.refs || []).some(r => this.ignored.has(r)));",
+  "replace": "    return !!x && this.ignored.has(x.msgid);",
+  "why": "new messages of an ignored conversation kept"
+ },
+ {
+  "name": "conv-ignore-remembered",
+  "gate": "conversations-gate.py",
+  "file": "ui/js/mail.js",
+  "find": "      this.ignored = new Set(st.ignoredConvs || []);",
+  "replace": "      this.ignored = new Set();",
+  "why": "ignored conversations forgotten at the next start"
+ },
+ {
+  "name": "conv-stop-ignoring",
+  "gate": "conversations-gate.py",
+  "file": "ui/js/mail.js",
+  "find": "    if (inbox) await this.moveTo(msgs, inbox.id);",
+  "replace": "",
+  "why": "Stop Ignoring leaving the conversation in Deleted Items"
+ },
+ {
+  "name": "qs-first-use",
+  "gate": "quicksteps-gate.py",
+  "file": "ui/js/quicksteps.js",
+  "find": "    if (incomplete(step)) {",
+  "replace": "    if (false) {",
+  "why": "a step run without First Time Setup"
+ },
+ {
+  "name": "qs-move-last",
+  "gate": "quicksteps-gate.py",
+  "file": "ui/js/quicksteps.js",
+  "find": "    for (const a of [...rest.filter(x => !last.has(x.type)), ...rest.filter(x => last.has(x.type))]) {",
+  "replace": "    for (const a of rest) {",
+  "why": "a step's other actions skipped after its move"
+ },
+ {
+  "name": "qs-named-after-folder",
+  "gate": "quicksteps-gate.py",
+  "file": "ui/js/quicksteps.js",
+  "find": "      if (f) draft.name = folderLabel(f);",
+  "replace": "",
+  "why": "Move to: ? keeping its question mark"
+ },
+ {
+  "name": "qs-original-first",
+  "gate": "quicksteps-gate.py",
+  "file": "ui/js/quicksteps.js",
+  "find": "    await m.app.compose(full);\n    await ready;",
+  "replace": "    await m.app.compose(full);",
+  "why": "Reply & Delete deleting before the reply has read the original"
+ },
+ {
+  "name": "qs-forward-to",
+  "gate": "quicksteps-gate.py",
+  "file": "ui/js/compose.js",
+  "find": "    if (params.get(\"to\") && !params.get(\"mailto\")) $(\"#to\").value = params.get(\"to\");",
+  "replace": "",
+  "why": "To Manager's forward without the manager"
+ },
+ {
+  "name": "qs-shortcut",
+  "gate": "quicksteps-gate.py",
+  "file": "ui/js/main.js",
+  "find": "    if (ctrl && shift && digit && this.quickSteps.byShortcut(digit[1]))",
+  "replace": "    if (false && digit)",
+  "why": "Ctrl+Shift+number not running its step"
+ },
+ {
+  "name": "qs-saved",
+  "gate": "quicksteps-gate.py",
+  "file": "ui/js/quicksteps.js",
+  "find": "    return messenger.storage.local.set({ quickSteps: this.steps }).catch(() => {});",
+  "replace": "    return Promise.resolve();",
+  "why": "Quick Steps forgotten at the next start"
+ },
+ {
+  "name": "qs-reply-original-gone",
+  "gate": "quicksteps-gate.py",
+  "file": "experiments/parent.js",
+  "find": "          try {\n            original = details.originalMessageId ? msgHdr(details.originalMessageId) : null;\n          } catch (e) {\n            original = null;\n          }",
+  "replace": "          original = details.originalMessageId ? msgHdr(details.originalMessageId) : null;",
+  "why": "a reply not sent once its original moved"
+ },
+ {
+  "name": "tasks-flagged-mail",
+  "gate": "tasks-gate.py",
+  "file": "ui/js/tasks.js",
+  "find": "    if (scope === \"todo\") {\n      for (const m of this.flagged) {",
+  "replace": "    if (false) {\n      for (const m of this.flagged) {",
+  "why": "flagged mail left out of the To-Do List"
+ },
+ {
+  "name": "tasks-quick-due-today",
+  "gate": "tasks-gate.py",
+  "file": "ui/js/tasks.js",
+  "find": "      await messenger.sgmail.saveTask({ calendarId: cal.id, title, due: startOfDay(new Date()).getTime(), start: null, status: \"NEEDS-ACTION\" });",
+  "replace": "      await messenger.sgmail.saveTask({ calendarId: cal.id, title, due: null, start: null, status: \"NEEDS-ACTION\" });",
+  "why": "a typed task not due today"
+ },
+ {
+  "name": "tasks-overdue-group",
+  "gate": "tasks-gate.py",
+  "file": "ui/js/tasks.js",
+  "find": "  if (d < today) return { key: \"overdue\", label: \"Overdue\", order: 0 };",
+  "replace": "",
+  "why": "overdue tasks not shown as overdue"
+ },
+ {
+  "name": "tasks-status",
+  "gate": "tasks-gate.py",
+  "file": "experiments/parent.js",
+  "find": "              item.status = status === \"NONE\" ? null : status;",
+  "replace": "              item.status = null;",
+  "why": "a task's status not kept"
+ },
+ {
+  "name": "tasks-active-view",
+  "gate": "tasks-gate.py",
+  "file": "ui/js/tasks.js",
+  "find": "      active: it => !it.completed,",
+  "replace": "      active: it => true,",
+  "why": "completed tasks left in the Active view"
+ },
+ {
+  "name": "tasks-mail-complete",
+  "gate": "tasks-gate.py",
+  "file": "ui/js/tasks.js",
+  "find": "        await messenger.messages.update(it.msg.id, { flagged: false });",
+  "replace": "",
+  "why": "flagged mail completed without clearing its flag"
+ },
+ {
+  "name": "tasks-follow-up-mail",
+  "gate": "tasks-gate.py",
+  "file": "ui/js/tasks.js",
+  "find": "        if (due) this.flagDue[it.msg.headerMessageId] = due;\n        else delete this.flagDue[it.msg.headerMessageId];\n        await messenger.storage.local.set({ flagDue: this.flagDue });",
+  "replace": "        await messenger.storage.local.set({ flagDue: this.flagDue });",
+  "why": "Follow Up not giving flagged mail its day"
+ },
+ {
+  "name": "tasks-todo-bar-remembered",
+  "gate": "tasks-gate.py",
+  "file": "ui/js/tasks.js",
+  "find": "    this.setTodoBar(!!st.todoBar, false);",
+  "replace": "    this.setTodoBar(false, false);",
+  "why": "the To-Do Bar forgotten at the next start"
+ },
+ {
+  "name": "tasks-delete",
+  "gate": "tasks-gate.py",
+  "file": "experiments/parent.js",
+  "find": "          if (item) await calendar.deleteItem(item);",
+  "replace": "",
+  "why": "a deleted task left on the server"
+ },
+ {
+  "name": "sched-their-home",
+  "gate": "scheduling-gate.py",
+  "file": "experiments/parent.js",
+  "find": "              const theirs = seg.includes(\"@\") ? email : local;",
+  "replace": "              const theirs = seg;",
+  "why": "Open Shared Calendar looking in one's own calendar home"
+ },
+ {
+  "name": "sched-read-only",
+  "gate": "scheduling-gate.py",
+  "file": "experiments/parent.js",
+  "find": "          if (!info.writable) c.readOnly = true;",
+  "replace": "",
+  "why": "a calendar shared for reading opened as writable"
+ },
+ {
+  "name": "sched-own-busy",
+  "gate": "scheduling-gate.py",
+  "file": "experiments/parent.js",
+  "find": "            const own = mine.has(email) ? calendars.filter(c => !c.getProperty(\"sgmail.shared\")) :",
+  "replace": "            const own = mine.has(email) ? [] :",
+  "why": "the organizer's own busy times left out"
+ },
+ {
+  "name": "sched-shared-busy",
+  "gate": "scheduling-gate.py",
+  "file": "experiments/parent.js",
+  "find": "              calendars.filter(c => (c.getProperty(\"sgmail.shared\") || \"\").toLowerCase() === email);",
+  "replace": "              [];",
+  "why": "an attendee's opened calendar not used for their busy times"
+ },
+ {
+  "name": "sched-free-time",
+  "gate": "scheduling-gate.py",
+  "file": "experiments/parent.js",
+  "find": "    if (item.getProperty(\"TRANSP\") === \"TRANSPARENT\") continue;",
+  "replace": "",
+  "why": "time shown as Free counted as busy"
+ },
+ {
+  "name": "sched-server",
+  "gate": "scheduling-gate.py",
+  "file": "experiments/parent.js",
+  "find": "              const server = await serverFreeBusy(email, start, end);",
+  "replace": "              const server = [];",
+  "why": "the calendar server's free/busy not asked"
+ },
+ {
+  "name": "sched-autopick",
+  "gate": "scheduling-gate.py",
+  "file": "ui/js/scheduling.js",
+  "find": "      if (work && !busy.some(b => b.start < at + len && b.end > at)) {",
+  "replace": "      if (work) {",
+  "why": "AutoPick choosing a time someone is busy"
+ },
+ {
+  "name": "sched-click",
+  "gate": "scheduling-gate.py",
+  "file": "ui/js/scheduling.js",
+  "find": "      this.host.setTimes(start, start + (t.end - t.start));\n      this.paintRows();\n    });",
+  "replace": "    });",
+  "why": "a click in the grid not moving the meeting"
+ },
+ {
+  "name": "sched-remove",
+  "gate": "scheduling-gate.py",
+  "file": "experiments/parent.js",
+  "find": "          lazy.cal.manager.unregisterCalendar(c);",
+  "replace": "",
+  "why": "Remove Calendar leaving it"
+ },
+ {
+  "name": "ar-own-rules-kept",
+  "gate": "autoreply-gate.py",
+  "file": "experiments/parent.js",
+  "find": "  return head + (head && !head.endsWith(\"\\n\") ? \"\\r\\n\" : \"\") + block + rest.slice(head.length);",
+  "replace": "  return block;",
+  "why": "the person's own Sieve rules replaced by the automatic reply"
+ },
+ {
+  "name": "ar-turn-off",
+  "gate": "autoreply-gate.py",
+  "file": "experiments/parent.js",
+  "find": "  return { rest: script.slice(0, a) + script.slice(b + SIEVE_END.length).replace(/^\\r?\\n/, \"\"), settings };",
+  "replace": "  return { rest: script, settings };",
+  "why": "Turn off leaving the reply in the server's script"
+ },
+ {
+  "name": "ar-starttls",
+  "gate": "autoreply-gate.py",
+  "file": "experiments/parent.js",
+  "find": "      this.socket.upgradeToSecure();\n",
+  "replace": "",
+  "why": "ManageSieve without TLS after STARTTLS"
+ },
+ {
+  "name": "ar-local-bulk",
+  "gate": "autoreply-gate.py",
+  "file": "ui/js/autoreply.js",
+  "find": "      if (!email || mine.has(email) || x.bulk || m.junk) continue;",
+  "replace": "      if (!email || mine.has(email) || m.junk) continue;",
+  "why": "automatic replies to bulk mail"
+ },
+ {
+  "name": "ar-local-once",
+  "gate": "autoreply-gate.py",
+  "file": "ui/js/autoreply.js",
+  "find": "      if (s.sent[email] && now - s.sent[email] < (s.end ? s.end - s.start : WEEK)) continue;",
+  "replace": "",
+  "why": "a sender answered more than once"
+ },
+ {
+  "name": "ar-auto-submitted",
+  "gate": "autoreply-gate.py",
+  "file": "experiments/parent.js",
+  "find": "            if (/^(Auto-Submitted|X-Auto-Response-Suppress)$/i.test(k)) fields.setRawHeader(k, String(v));",
+  "replace": "",
+  "why": "replies not marked Auto-Submitted"
+ },
+ {
+  "name": "ar-no-sent-copy",
+  "gate": "autoreply-gate.py",
+  "file": "ui/js/autoreply.js",
+  "find": "          noCopy: true,",
+  "replace": "          noCopy: false,",
+  "why": "automatic replies kept in Sent Items"
+ },
+ {
+  "name": "ar-label",
+  "gate": "autoreply-gate.py",
+  "file": "ui/js/autoreply.js",
+  "find": "    const how = s.mode === \"local\" ? \" from this computer, only while SG Mail is running\" : \"\";",
+  "replace": "    const how = \"\";",
+  "why": "replies from this computer not labelled as such"
+ },
+ {
+  "name": "tasks-complete",
+  "gate": "tasks-gate.py",
+  "file": "experiments/parent.js",
+  "find": "            if (status === \"COMPLETED\") {",
+  "replace": "            if (false) {",
+  "why": "Mark Complete not completing the task (no completion date, not 100%)"
  }
 ]

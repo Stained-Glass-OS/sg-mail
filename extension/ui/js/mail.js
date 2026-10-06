@@ -10,8 +10,9 @@
 import { icon } from "./icons.js";
 import { h, $, esc, showMenu, toast, debounce, displayName, parseAddress, confirmBox, dialog, testDump } from "./util.js";
 import { FolderPane, roleOf, folderLabel } from "./folders.js";
-import { MessageList } from "./msglist.js";
+import { MessageList, baseSubject } from "./msglist.js";
 import { ReadingPane } from "./reader.js";
+import { groupConversations, conversationIds, redundantMessages, messageText } from "./conversations.js";
 
 export class MailModule {
   constructor(app) {
@@ -32,7 +33,7 @@ export class MailModule {
       onSelect: sel => this.onSelection(sel),
       onOpen: m => this.openMessage(m),
       onContext: (sel, at) => this.contextMenu(sel, at),
-      onFlag: m => this.flag([m]),
+      onFlag: m => this.flag(Array.isArray(m) ? m : [m]),
     });
     this.reader = new ReadingPane($("#reading-pane"), {
       reply: m => this.compose({ mode: "reply", id: m.id }),
@@ -50,16 +51,22 @@ export class MailModule {
     this.focus = { on: true, rules: {}, msgs: {}, info: new Map() };
     this.list.focusFilter = null;
     this.list.focusTab = "focused";
+    // conversations: what each listed message names (Message-IDs), and the
+    // conversations ignored (their Message-IDs: new ones go to Deleted Items)
+    this.convInfo = new Map();
+    this.ignored = new Set();
     this.wire();
   }
 
   async start() {
     await this.loadTags();
     try {
-      const st = await messenger.storage.local.get(["focusedInbox", "focusRules", "focusMsgs"]);
+      const st = await messenger.storage.local.get(["focusedInbox", "focusRules", "focusMsgs", "conversations", "ignoredConvs"]);
       this.focus.on = st.focusedInbox !== false;
       this.focus.rules = st.focusRules || {};
       this.focus.msgs = st.focusMsgs || {};
+      this.list.conversations = !!st.conversations;
+      this.ignored = new Set(st.ignoredConvs || []);
     } catch (e) {
       // first start
     }
@@ -211,7 +218,10 @@ export class MailModule {
     }
     if (this.folder !== f || this.search.text) return;
     if (this.focusShown()) await this.classify(msgs);
+    if (this.list.conversations || this.ignored.size) await this.loadConversations(msgs, msgs);
     if (this.folder !== f || this.search.text) return;
+    // messages of ignored conversations that came while SG Mail was closed
+    if (this.ignored.size) msgs = await this.dropIgnored(msgs);
     this.applyFocus();
     this.list.setLoading(false);
     this.list.emptyText = this.list.filter === "unread" ? "No unread items." : "We didn't find anything to show here.";
@@ -318,6 +328,7 @@ export class MailModule {
     this.list.emptyText = "We didn't find anything to show here.";
     this.list.folderRole = "";
     this.applyFocus();
+    if (this.list.conversations) await this.loadConversations(out, out);
     this.list.setMessages(out);
     this.app.setStatus(`${out.length} result${out.length === 1 ? "" : "s"} for "${text}"`);
     this.dumpSoon();
@@ -330,6 +341,198 @@ export class MailModule {
     this.searchToken = null;
     if (this.folder) this.list.folderRole = roleOf(this.folder);
     if (reload) this.reload(false);
+  }
+
+  // ---- conversations ------------------------------------------------------------------------
+
+  // what puts the listed messages in conversations (asked once a message)
+  async loadConversations(msgs, universe = null) {
+    const want = msgs.filter(m => !this.convInfo.has(m.id)).map(m => m.id);
+    for (let i = 0; i < want.length; i += 500) {
+      try {
+        for (const x of await messenger.sgmail.conversationInfo(want.slice(i, i + 500))) this.convInfo.set(x.id, x);
+      } catch (e) {
+        console.error("sg-mail: conversations", e);
+        break;
+      }
+    }
+    this.groupList(universe || this.list.messages);
+  }
+
+  groupList(msgs) {
+    const info = msgs.map(m => this.convInfo.get(m.id)).filter(Boolean);
+    this.list.convOf = groupConversations(info);
+  }
+
+  // View > Show as Conversations: on or off for every folder, remembered
+  async setConversations(on) {
+    this.list.conversations = !!on;
+    messenger.storage.local.set({ conversations: !!on }).catch(() => {});
+    if (on) await this.loadConversations(this.list.messages);
+    this.list.selected.clear();
+    this.relayout();
+    this.onSelection([]);
+    this.app.updateRibbon();
+    this.app.setStatus(on ? "Showing messages as conversations" : "Showing messages one by one");
+  }
+
+  // the messages of a conversation wherever they are in the account (one's
+  // own replies in Sent Items), newest first
+  async conversationItems(msgs) {
+    const info = msgs.map(m => this.convInfo.get(m.id)).filter(Boolean);
+    const folderId = (msgs[0].folder && msgs[0].folder.id) || (this.folder && !this.folder.virtual && this.folder.id);
+    let found = [];
+    if (folderId && info.length) {
+      try {
+        found = await messenger.sgmail.conversationMessages(folderId, conversationIds(info));
+      } catch (e) {
+        console.error("sg-mail: conversation", e);
+      }
+    }
+    const items = new Map(msgs.map(m => [m.id, { msg: m, here: true, folderName: "", role: "" }]));
+    for (const x of found) {
+      if (items.has(x.id)) continue;
+      try {
+        const m = await messenger.messages.get(x.id);
+        const f = m.folder && this.folders.folders.get(m.folder.id);
+        items.set(x.id, { msg: m, here: false, folderName: f ? folderLabel(f) : x.folderName, role: f ? roleOf(f) : x.sent ? "sent" : "" });
+      } catch (e) {
+        // gone meanwhile
+      }
+    }
+    return [...items.values()].sort((a, b) => b.msg.date - a.msg.date);
+  }
+
+  // the reading pane shows the conversation (a lone message as itself
+  // when nothing else of its conversation is anywhere)
+  async showConversation(msgs, single = false) {
+    const token = (this.convToken = Symbol("conv"));
+    if (single) await this.loadConversations(msgs);
+    const items = await this.conversationItems(msgs);
+    if (this.convToken !== token) return;
+    if (items.length <= 1) return this.reader.show(msgs[0]);
+    this.reader.showConversation(items, { subject: baseSubject(items[items.length - 1].msg.subject) });
+    this.dumpSoon();
+  }
+
+  // the conversations of messages (all of each, in this list)
+  conversationsOf(msgs) {
+    const keys = new Set(msgs.map(m => this.list.convOf.get(m.id)).filter(Boolean));
+    return this.list.messages.filter(m => keys.has(this.list.convOf.get(m.id)));
+  }
+
+  // Clean Up: messages whose whole text a later reply quotes go to Deleted
+  // Items -- of the selected conversation, or of the whole folder
+  async cleanUp(scope) {
+    if (!this.folder || this.folder.virtual) return;
+    if (roleOf(this.folder) === "trash") return toast("Clean Up does not work in Deleted Items.");
+    let msgs = this.list.messages;
+    await this.loadConversations(msgs);
+    if (scope === "conversation") {
+      const sel = this.selection();
+      if (!sel.length) return;
+      msgs = this.conversationsOf(sel);
+    } else if (scope === "folder" && !(await confirmBox("Clean Up Folder", "Redundant messages in this folder will be moved to the Deleted Items folder.", "Clean Up Folder", "Cancel"))) return;
+    this.app.setStatus("Cleaning up…");
+    const groups = new Map();
+    for (const m of msgs) {
+      const k = this.list.convOf.get(m.id);
+      if (!k) continue;
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(m);
+    }
+    const redundant = [];
+    for (const list of groups.values()) {
+      if (list.length < 2) continue;
+      const items = [];
+      for (const m of [...list].sort((a, b) => a.date - b.date)) items.push({ msg: m, info: this.convInfo.get(m.id), text: await messageText(m.id) });
+      redundant.push(...redundantMessages(items));
+    }
+    if (!redundant.length) {
+      this.app.setStatus("No messages were cleaned up.");
+      return dialog({ title: "Clean Up", body: "<p>No messages were cleaned up.</p>" });
+    }
+    this.list.remove(redundant.map(m => m.id));
+    try {
+      await messenger.messages.delete(redundant.map(m => m.id), {});
+    } catch (e) {
+      toast("Could not clean up: " + e.message);
+      return this.reload(true);
+    }
+    this.app.setStatus(`Clean Up moved ${redundant.length} message${redundant.length > 1 ? "s" : ""} to Deleted Items`);
+  }
+
+  isIgnored(id) {
+    const x = this.convInfo.get(id);
+    return !!x && (this.ignored.has(x.msgid) || (x.refs || []).some(r => this.ignored.has(r)));
+  }
+
+  // Ignore Conversation: its messages, and the ones that come in it, go to
+  // Deleted Items. In Deleted Items: Stop Ignoring (back to the Inbox).
+  async ignoreConversation(sel) {
+    if (!sel.length || !this.folder) return;
+    await this.loadConversations(sel);
+    if (roleOf(this.folder) === "trash" && sel.some(m => this.isIgnored(m.id))) return this.stopIgnoring(sel);
+    const ok = await dialog({
+      title: "Ignore Conversation",
+      body: "<p>The selected conversation and all future messages will be moved to the Deleted Items folder.</p>",
+      buttons: [{ label: "Ignore Conversation", value: true, primary: true }, { label: "Cancel", value: false, cancel: true }],
+    });
+    if (!ok) return;
+    const here = this.conversationsOf(sel);
+    const items = await this.conversationItems(here);
+    const info = [...here.map(m => this.convInfo.get(m.id)).filter(Boolean)];
+    for (const id of conversationIds(info)) this.ignored.add(id);
+    await this.saveIgnored();
+    // (one's own replies stay in Sent Items)
+    const ids = items.filter(it => it.role !== "sent").map(it => it.msg.id);
+    this.list.remove(ids);
+    try {
+      await messenger.messages.delete(ids, {});
+    } catch (e) {
+      toast("Could not move it: " + e.message);
+    }
+    this.app.setStatus(`Conversation ignored: ${ids.length} message${ids.length === 1 ? "" : "s"} moved to Deleted Items`);
+  }
+
+  async stopIgnoring(sel) {
+    const msgs = this.conversationsOf(sel);
+    const info = msgs.map(m => this.convInfo.get(m.id)).filter(Boolean);
+    for (const id of conversationIds(info)) this.ignored.delete(id);
+    await this.saveIgnored();
+    const inbox = this.folders.inbox(this.folder.accountId);
+    if (inbox) await this.moveTo(msgs, inbox.id);
+    this.app.setStatus("The conversation is no longer ignored");
+  }
+
+  async saveIgnored() {
+    // the last few thousand Message-IDs
+    const list = [...this.ignored].slice(-5000);
+    this.ignored = new Set(list);
+    await messenger.storage.local.set({ ignoredConvs: list }).catch(() => {});
+  }
+
+  // messages of ignored conversations: to Deleted Items (their Message-IDs
+  // remembered too: replies to them are the conversation)
+  async dropIgnored(msgs) {
+    const f = msgs[0] && msgs[0].folder && this.folders.folders.get(msgs[0].folder.id);
+    if (!msgs.length || (f && ["trash", "sent", "drafts", "outbox"].includes(roleOf(f)))) return msgs;
+    const drop = msgs.filter(m => this.isIgnored(m.id));
+    if (!drop.length) return msgs;
+    for (const m of drop) {
+      const x = this.convInfo.get(m.id);
+      if (x && x.msgid) this.ignored.add(x.msgid);
+    }
+    await this.saveIgnored();
+    try {
+      await messenger.messages.delete(drop.map(m => m.id), {});
+      this.app.setStatus(`${drop.length} message${drop.length === 1 ? "" : "s"} of an ignored conversation moved to Deleted Items`);
+    } catch (e) {
+      console.error("sg-mail: ignore", e);
+      return msgs;
+    }
+    const gone = new Set(drop.map(m => m.id));
+    return msgs.filter(m => !gone.has(m.id));
   }
 
   // ---- the Focused Inbox -------------------------------------------------------------------
@@ -452,6 +655,10 @@ export class MailModule {
 
   async addToList(msgs) {
     if (this.focusShown()) await this.classify(msgs);
+    if (this.list.conversations || this.ignored.size) {
+      await this.loadConversations(msgs, [...this.list.messages, ...msgs]);
+      if (this.ignored.size) msgs = await this.dropIgnored(msgs);
+    }
     this.list.add(msgs);
     this.paintFocusTabs();
   }
@@ -471,7 +678,10 @@ export class MailModule {
 
   onSelection(sel) {
     this.app.updateRibbon();
-    if (sel.length === 1) this.reader.show(sel[0]);
+    const conv = this.list.selectedConversation();
+    if (conv) this.showConversation(this.list.convs.get(conv) || sel);
+    else if (sel.length === 1 && this.list.conversations && !this.list.conversationOf(sel[0].id)) this.showConversation([sel[0]], true);
+    else if (sel.length === 1) this.reader.show(sel[0]);
     else if (sel.length > 1) this.reader.showMany(sel.length);
     else this.reader.showEmpty();
     this.dumpSoon();
@@ -673,6 +883,19 @@ export class MailModule {
     this.app.setStatus(`Rule made: messages from ${email} go to ${folderLabel(this.folders.folders.get(target) || { name: "the folder", specialUse: [] })}`);
   }
 
+  // Ignore (or, in Deleted Items for an ignored one, Stop Ignoring)
+  ignoreItem(sel) {
+    const stop = this.folder && roleOf(this.folder) === "trash" && sel.some(m => this.isIgnored(m.id));
+    return { label: stop ? "Stop Ignoring Conversation" : "Ignore Conversation", icon: "ignore", action: () => this.ignoreConversation(sel) };
+  }
+
+  cleanUpMenu() {
+    return [
+      { label: "Clean Up Conversation", icon: "clean-up", disabled: !this.selection().length, action: () => this.cleanUp("conversation") },
+      { label: "Clean Up Folder", icon: "clean-up", action: () => this.cleanUp("folder") },
+    ];
+  }
+
   moveMenu() {
     const sel = this.selection();
     const items = [];
@@ -706,12 +929,16 @@ export class MailModule {
           { label: `Always Move to ${name}`, action: () => this.moveFocus(sel, to, true) }, { separator: true }];
       })() : []),
       { label: "Move", icon: "move", submenu: this.moveMenu() },
+      { label: "Quick Steps", icon: "quick-step", submenu: this.app.quickSteps.menu() },
       { label: "Categorize", icon: "category", submenu: this.categorizeMenu() },
       { label: "Rules", icon: "rules", submenu: this.rulesMenu() },
       { label: "Junk", icon: "junk", submenu: [
         { label: "Block Sender / Junk", action: () => this.junkSelected(true) },
         { label: "Not Junk", action: () => this.junkSelected(false) },
       ] },
+      { separator: true },
+      this.ignoreItem(sel),
+      { label: "Clean Up Conversation", icon: "clean-up", action: () => this.cleanUp("conversation") },
       { label: "Archive", icon: "archive", shortcut: "Backspace", action: () => this.archiveSelected() },
       { label: "Delete", icon: "delete", shortcut: "Delete", action: () => this.deleteSelected() },
     ], at);
@@ -720,6 +947,12 @@ export class MailModule {
   // ---- new mail ---------------------------------------------------------------------------
 
   async onNewMail(folder, list) {
+    if (this.ignored.size && !(folder.specialUse || []).some(r => ["trash", "sent", "drafts"].includes(r))) {
+      await this.loadConversations(list.messages);
+      const kept = await this.dropIgnored(list.messages);
+      if (kept.length !== list.messages.length) list = Object.assign({}, list, { messages: kept });
+    }
+    this.app.autoReplies?.onNewMail(folder, list.messages);
     if (this.folder && folder.id === this.folder.id && !this.search.text) await this.addToList(list.messages);
     if (this.folder && this.folder.virtual && !this.search.text) this.reloadSoon();
     if ((folder.specialUse || []).includes("junk")) return;
@@ -776,6 +1009,7 @@ export class MailModule {
       focused: this.focusShown() ? { tab: this.list.focusTab, tabs: [...document.querySelectorAll(".list-filter")].map(b => b.textContent.trim()),
         of: Object.fromEntries(this.list.messages.map(m => [m.subject, this.focusOf(m)])) } : null,
       readingPane: this.app.readingPane,
+      conversations: this.list.conversations,
       reader: this.reader.dump(),
       notifications: this.app.notifications,
       title: document.title,

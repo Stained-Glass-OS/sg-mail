@@ -9,8 +9,8 @@ here a local stand-in) and makes the account, which SG Mail's folder pane
 then shows; Thunderbird knows how to sign in to
 Microsoft (Outlook.com, Microsoft 365) and Google mail with their own login
 pages (OAuth2 with Mozilla's registration: nothing to register for SG Mail).
-Screenshots of the main window, the calendar, People and the message
-window, light and dark, are left in the gate's directory.
+Screenshots of the main window, the calendar, People, a conversation, Tasks
+and the message window, light and dark, are left in the gate's directory.
 
 Mutants (test/mutants.json): look-*.
 
@@ -66,14 +66,26 @@ def seed(env):
         ("Nestor Wilke <nestor@example.test>", "Team offsite agenda", "Draft agenda for the offsite: morning planning, afternoon hike.", 100, True, []),
         ("Joni Sherman <joni@example.test>", "Welcome to the team!", "We are glad to have you with us. Your first week schedule is below.", 400, True, []),
     ]
+    # the kite festival is a conversation: Alice asked (Sent Items), two answered
+    kite = [("References", "<kite-1@example.test>"), ("In-Reply-To", "<kite-1@example.test>")]
     for frm, subj, text, hours, seen, att in msgs:
         t = now - hours * 3600
-        env.append("INBOX", message(frm, "Alice Example <alice@example.test>", subj, text=text, date=t, attachments=att), seen=seen, flagged=subj.startswith("Invoice"), date=t)
+        env.append("INBOX", message(frm, "Alice Example <alice@example.test>", subj, text=text, date=t, attachments=att,
+                                    extra_headers=kite if "Kite festival" in subj else ()), seen=seen, flagged=subj.startswith("Invoice"), date=t)
+    t = now - 20 * 3600
+    env.append("INBOX", message("Nestor Wilke <nestor@example.test>", "Alice Example <alice@example.test>", "Re: Kite festival volunteers",
+                                text="I'll take the afternoon shift.", date=t, extra_headers=kite), seen=True, date=t)
+    t = now - 30 * 3600
+    env.append("Sent", message("Alice Example <alice@example.test>", "Kite club <kites@example.test>", "Kite festival volunteers",
+                               text="Who can help at the festival on Saturday?", date=t, msgid="<kite-1@example.test>"), seen=True, date=t)
     # a newsletter: the Focused Inbox's Other tab
     t = now - 2 * 3600
     env.append("INBOX", message("Contoso News <news@contoso.test>", "alice@example.test", "This week at Contoso", text="Our news.", date=t,
                                 extra_headers=[("List-Unsubscribe", "<mailto:leave@contoso.test>")]), date=t)
     env.append("Projects", message("Lee Gu <lee@example.test>", "alice@example.test", "Kite plans", text="x"), seen=True)
+
+
+LOOKS = {}
 
 
 def shots(env, tag):
@@ -102,6 +114,28 @@ def shots(env, tag):
     env.ui("click", selector=".pp-row", text="Megan Bowen")
     time.sleep(1)
     env.screenshot(os.path.join(SHOTS, f"sg-mail-people-{tag}.png"))
+    # conversations and Tasks in this look
+    env.ui("click", selector="#nav-mail")
+    env.ui("click", selector='.ribbon-tab[data-tab="view"]')
+    env.ui("click", selector="#rb-conversations")
+    env.wait_ui("mail", lambda r: r["conversations"] and any("conv" in x for x in r["list"]), timeout=30)
+    env.ui("selectConversation", subject="Kite festival volunteers")
+    env.wait_ui("mail", lambda r: len(r["reader"].get("conversation") or []) == 3, timeout=40)
+    time.sleep(1.5)
+    env.screenshot(os.path.join(SHOTS, f"sg-mail-conversations-{tag}.png"))
+    LOOKS[tag] = {"conversation": env.ui("style", selector=".cv-item", prop="backgroundColor")}
+    env.ui("click", selector="#rb-conversations")
+    env.wait_ui("mail", lambda r: not r["conversations"], timeout=20)
+    env.ui("click", selector='.ribbon-tab[data-tab="home"]')
+    env.ui("click", selector="#nav-tasks")
+    for t in ("Prepare the QBR figures", "Book the bus for the offsite"):
+        env.ui("type", selector="#tk-new", value=t)
+        env.ui("key", selector="#tk-new", key="Enter")
+    d = env.wait_ui("tasks", lambda r: len(r["items"]) >= 3, timeout=40)
+    env.ui("click", selector=f'.tk-row[data-key="{next(x["key"] for x in d["items"] if x["title"] == "Prepare the QBR figures")}"]')
+    time.sleep(1)
+    env.screenshot(os.path.join(SHOTS, f"sg-mail-tasks-{tag}.png"))
+    LOOKS[tag]["tasks"] = env.ui("style", selector=".tk-detail", prop="backgroundColor")
     env.ui("click", selector="#nav-mail")
     env.ui("selectMessage", subject="Lunch on Friday?")
     env.ui("key", selector="#message-list", key="r", ctrl=True)
@@ -165,6 +199,7 @@ try:
             "the main window is SG Mail's alone: Thunderbird's toolbars, spaces bar and tabs hidden", chrome)
     bg = shots(env, "light")
     g.check(lum(bg) > 200, "light: a light window", bg)
+    g.check(lum(LOOKS["light"]["conversation"]) > 200 and lum(LOOKS["light"]["tasks"]) > 200, "light: conversations and Tasks light too", LOOKS["light"])
     title = env.chrome("""return Services.wm.getMostRecentWindow("mail:3pane").document.title;""")
     g.check(title == "Inbox - alice@example.test - SG Mail", "the window's title: Inbox - alice@example.test - SG Mail", title)
 
@@ -386,6 +421,7 @@ try:
     env.caldav_id = env.add_caldav_calendar()
     bg = shots(env, "dark")
     g.check(lum(bg) < 60, "dark: a dark window when the system is dark", bg)
+    g.check(lum(LOOKS["dark"]["conversation"]) < 60 and lum(LOOKS["dark"]["tasks"]) < 60, "dark: conversations and Tasks dark too", LOOKS["dark"])
 finally:
     env.stop()
 print("screenshots:", " ".join(sorted(os.listdir(SHOTS))))

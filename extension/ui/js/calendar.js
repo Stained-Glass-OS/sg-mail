@@ -10,7 +10,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 import { icon } from "./icons.js";
-import { h, $, $$, esc, fmt, startOfDay, addDays, sameDay, startOfWeek, weekStartDay, showMenu, toast, dialog, confirmBox, debounce, testDump } from "./util.js";
+import { h, $, $$, esc, fmt, startOfDay, addDays, sameDay, startOfWeek, weekStartDay, showMenu, toast, dialog, confirmBox, debounce, testDump, searchAddressBooks, displayName } from "./util.js";
 
 const SLOT_H = 24;              // half an hour
 const WORK_START = 8, WORK_END = 17;
@@ -86,7 +86,8 @@ export class CalendarModule {
   }
 
   defaultCalendar() {
-    const w = this.writableCalendars();
+    // one's own: another person's calendar (a delegate's) only when chosen
+    const w = this.writableCalendars().filter(c => !c.shared);
     return w.find(c => !this.hidden.has(c.id)) || w[0] || null;
   }
 
@@ -129,6 +130,7 @@ export class CalendarModule {
           ] },
           { label: "Manage Calendars", items: [
             { id: "open-calendar", icon: "folder-open", label: "Open Calendar", large: true, menu: () => [
+              { label: "Open Shared Calendar…", icon: "shared-calendar", action: () => this.openShared() },
               { label: "From Internet / Network (CalDAV, iCalendar)…", action: () => messenger.sgmail.openTool("newCalendar") },
               { label: "From File (.ics)…", action: () => this.importIcs() },
             ] },
@@ -215,28 +217,115 @@ export class CalendarModule {
   renderSide() {
     const side = h("div", { class: "cal-side" });
     side.append(this.miniMonth(this.navMonth || new Date(this.date.getFullYear(), this.date.getMonth(), 1)));
-    side.append(h("div", { class: "cal-list-head", html: `${icon("chevron-down", 12)} My Calendars` }));
-    for (const c of this.calendars) {
-      const on = !this.hidden.has(c.id);
-      const row = h("div", { class: "cal-item", "data-id": c.id, title: c.name + (c.readOnly ? " (read-only)" : ""),
-        html: `<span class="cal-check" style="border-color:${esc(c.color)};background:${on ? esc(c.color) : "transparent"};color:#fff">${on ? icon("accept", 12).replace(/#107c10/g, "#fff") : ""}</span>` +
-          `<span class="cal-name">${esc(c.name)}</span><span class="cal-acct">${esc(c.type === "storage" ? "" : c.type === "caldav" ? "CalDAV" : c.type === "ics" ? "Internet" : c.type)}</span>` });
-      row.addEventListener("click", () => this.toggleCalendar(c.id));
-      row.addEventListener("contextmenu", e => {
-        e.preventDefault();
-        showMenu([
-          { label: on ? "Hide Calendar" : "Show Calendar", action: () => this.toggleCalendar(c.id) },
-          { label: "Export (.ics)…", icon: "export", action: () => this.exportIcs([c.id]) },
-          { label: "Import into This Calendar…", icon: "import", disabled: c.readOnly, action: () => this.importIcs(c.id) },
-        ], { x: e.clientX, y: e.clientY });
-      });
-      side.append(row);
-    }
+    const group = (title, list) => {
+      if (!list.length) return;
+      side.append(h("div", { class: "cal-list-head", html: `${icon("chevron-down", 12)} ${esc(title)}` }));
+      for (const c of list) side.append(this.calendarRow(c));
+    };
+    group("My Calendars", this.calendars.filter(c => !c.shared));
+    // other people's calendars opened here (Open Shared Calendar)
+    group("Shared Calendars", this.calendars.filter(c => c.shared));
     if (!this.calendars.length) side.append(h("p", { style: "color:var(--muted);padding:6px", text: "No calendars." }));
     const add = h("button", { class: "btn link", style: "margin:8px 4px", html: `${icon("appointment-new", 14)} Add calendar…` });
     add.addEventListener("click", () => messenger.sgmail.openTool("newCalendar"));
     side.append(add);
     this.side.replaceChildren(side);
+  }
+
+  calendarRow(c) {
+    const on = !this.hidden.has(c.id);
+    const row = h("div", { class: "cal-item", "data-id": c.id, title: c.name + (c.readOnly ? " (read-only)" : "") + (c.shared ? `\n${c.shared}` : ""),
+      html: `<span class="cal-check" style="border-color:${esc(c.color)};background:${on ? esc(c.color) : "transparent"};color:#fff">${on ? icon("accept", 12).replace(/#107c10/g, "#fff") : ""}</span>` +
+        `<span class="cal-name">${esc(c.name)}</span><span class="cal-acct">${esc(c.shared ? (c.readOnly ? "Read" : "Edit") : c.type === "storage" ? "" : c.type === "caldav" ? "CalDAV" : c.type === "ics" ? "Internet" : c.type)}</span>` });
+    row.addEventListener("click", () => this.toggleCalendar(c.id));
+    row.addEventListener("contextmenu", e => {
+      e.preventDefault();
+      showMenu([
+        { label: on ? "Hide Calendar" : "Show Calendar", action: () => this.toggleCalendar(c.id) },
+        { label: "Export (.ics)…", icon: "export", action: () => this.exportIcs([c.id]) },
+        { label: "Import into This Calendar…", icon: "import", disabled: c.readOnly, action: () => this.importIcs(c.id) },
+        ...(c.shared ? [{ separator: true }, { label: "Remove Calendar", icon: "delete", action: () => this.removeShared(c) }] : []),
+      ], { x: e.clientX, y: e.clientY });
+    });
+    return row;
+  }
+
+  // Open Shared Calendar: a colleague's calendar on the same calendar
+  // server, by their name or address (what they let one see: read, or edit
+  // as a delegate)
+  async openShared() {
+    const input = h("input", { type: "text", id: "shared-name", style: "flex:1", placeholder: "Name or e-mail address", autocomplete: "off" });
+    const v = await dialog({
+      title: "Open a Shared Calendar",
+      body: h("div", {}, h("p", { text: "Whose calendar do you want to open?" }), h("div", { class: "form-row" }, h("label", { text: "Name:" }), input)),
+      buttons: [{ label: "OK", primary: true, value: box => box.querySelector("#shared-name").value.trim() }, { label: "Cancel", value: null, cancel: true }],
+    });
+    if (!v) return;
+    // a name: the address from the address book
+    let email = v, name = "";
+    const m = v.match(/<([^>]+)>/);
+    if (m) {
+      email = m[1];
+      name = v.replace(/<[^>]+>/, "").replace(/"/g, "").trim();
+    } else if (!v.includes("@")) {
+      try {
+        const found = await searchAddressBooks(v);
+        const card = found.find(n => /^EMAIL/mi.test(n.vCard || ""));
+        if (card) {
+          email = ((card.vCard.match(/^EMAIL[^:]*:(.*)$/mi) || [])[1] || "").trim();
+          name = ((card.vCard.match(/^FN[^:]*:(.*)$/mi) || [])[1] || v).trim();
+        }
+      } catch (e) {
+        // no address books
+      }
+    }
+    if (!email.includes("@")) return dialog({ title: "Open a Shared Calendar", body: `<p>SG Mail does not know "${esc(v)}". Type their e-mail address.</p>` });
+    this.app.setStatus(`Looking for ${email}'s calendar…`);
+    let r;
+    try {
+      r = await messenger.sgmail.findSharedCalendars(email);
+    } catch (e) {
+      r = { calendars: [], error: e.message };
+    }
+    if (!r.calendars.length) {
+      this.app.setStatus("");
+      return dialog({ title: "Open a Shared Calendar", body: `<p id="shared-error">${esc(r.error || "No calendar was found.")}</p>` });
+    }
+    let chosen = r.calendars;
+    if (r.calendars.length > 1) {
+      const box = h("div", {}, h("p", { text: `${email} has shared these calendars with you:` }),
+        r.calendars.map((c, i) => h("label", { class: "form-row", style: "gap:6px" }, h("input", { type: "checkbox", value: String(i), checked: i === 0 }), `${c.name}${c.writable ? " (can edit)" : ""}`)));
+      const pick = await dialog({ title: "Open a Shared Calendar", body: box,
+        buttons: [{ label: "Open", primary: true, value: b => [...b.querySelectorAll("input:checked")].map(i => Number(i.value)) }, { label: "Cancel", value: null, cancel: true }] });
+      if (!pick || !pick.length) return;
+      chosen = pick.map(i => r.calendars[i]);
+    }
+    const owner = name || displayName(email);
+    const colors = ["#8764b8", "#038387", "#ca5010", "#498205", "#c239b3", "#986f0b"];
+    for (const [i, c] of chosen.entries()) {
+      try {
+        await messenger.sgmail.openSharedCalendar({ url: c.url, name: `${owner} - ${c.name}`, color: c.color || colors[(this.calendars.length + i) % colors.length],
+          owner: email, writable: c.writable, username: c.username });
+      } catch (e) {
+        toast("The calendar could not be opened: " + e.message);
+      }
+    }
+    await this.loadCalendars();
+    this.renderSide();
+    this.refresh();
+    this.app.setStatus(`${owner}'s calendar is open`);
+  }
+
+  async removeShared(c) {
+    if (!(await confirmBox("SG Mail", `Remove "${c.name}" from your calendars? It stays as it is for its owner.`, "Remove", "Cancel"))) return;
+    try {
+      await messenger.sgmail.removeCalendar(c.id);
+    } catch (e) {
+      return toast("Could not remove it: " + e.message);
+    }
+    await this.loadCalendars();
+    this.renderSide();
+    this.refresh();
   }
 
   miniMonth(month) {
@@ -971,7 +1060,8 @@ export class CalendarModule {
     const data = {
       view: this.view,
       title: this.main.querySelector("#cal-title")?.textContent || "",
-      calendars: this.calendars.map(c => ({ name: c.name, type: c.type, shown: !this.hidden.has(c.id), readOnly: c.readOnly })),
+      calendars: this.calendars.map(c => ({ name: c.name, type: c.type, shown: !this.hidden.has(c.id), readOnly: c.readOnly, shared: c.shared })),
+      groups: [...this.side.querySelectorAll(".cal-list-head")].map(e => e.textContent.trim()),
       events: this.events.map(e => ({ title: e.title, start: e.start, end: e.end, allDay: e.allDay, calendar: e.calendarName, recurring: e.recurring,
         location: e.location, attendees: e.attendees.map(a => a.email + ":" + a.status), myStatus: e.myStatus })),
       drawn: [...this.main.querySelectorAll("[data-key]")].map(el => el.textContent.trim()).slice(0, 200),

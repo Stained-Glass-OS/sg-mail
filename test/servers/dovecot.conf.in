@@ -3,7 +3,7 @@
 # @SPORT@ (a scratch CA's certificate). Users and passwords: @DIR@/users.
 dovecot_config_version = 2.4.0
 dovecot_storage_version = 2.4.0
-protocols = imap
+protocols = @PROTOCOLS@
 listen = 127.0.0.1
 base_dir = @DIR@/run
 state_dir = @DIR@/state
@@ -99,3 +99,4 @@ service stats {
 service config {
   user = @USER@
 }
+@SIEVE@

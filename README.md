@@ -8,8 +8,9 @@ Week, ...), the reading pane (right, bottom or off), a message window, a
 Calendar with Day, Work Week, Week and Month views, and People. The keys are
 the familiar ones (Ctrl+N, Ctrl+R, Ctrl+Shift+R, Ctrl+F forward, Ctrl+E
 search, Ctrl+Q / Ctrl+U read/unread, Insert flag, Delete, Backspace archive,
-Ctrl+Shift+V move, F9 Send/Receive, Ctrl+1 / Ctrl+2 / Ctrl+3 Mail /
-Calendar / People, Ctrl+Alt+1..4 calendar views).
+Ctrl+Shift+V move, F9 Send/Receive, Ctrl+1 / Ctrl+2 / Ctrl+3 / Ctrl+4 Mail
+/ Calendar / People / Tasks, Ctrl+Alt+1..4 calendar views, Ctrl+Shift+1..9
+Quick Steps).
 
 - **Focused Inbox**: the Inbox in two tabs, Focused and Other. Bulk mail
   (mailing lists, newsletters, no-reply senders: their List-Unsubscribe,
@@ -37,17 +38,72 @@ Calendar / People, Ctrl+Alt+1..4 calendar views).
   Always Move Messages From** (a Thunderbird filter, run on new mail; Manage
   Rules & Alerts opens Thunderbird's filters).
 
-Not there yet, against the classic desktop client in daily use: Quick Steps,
-conversation view (threads), Clean Up / Ignore conversation, Tasks / To-Do,
-the meeting Scheduling Assistant (free/busy), Automatic Replies (out of
-office: a server feature of Exchange), shared and delegated calendars.
+- **Conversations** (View > Show as Conversations, remembered): the
+  messages of a conversation (the Message-IDs they answer: References and
+  In-Reply-To) are one row with its count, opened by its arrow or the Right
+  key; the reading pane shows the whole conversation newest first, one's
+  own replies from Sent Items too, each message a card that opens.
+- **Clean Up** (Home > Delete > Clean Up: Conversation or Folder): a
+  message goes to Deleted Items when a later reply in its conversation
+  quotes all of it; unread, flagged and categorized messages stay.
+  **Ignore** (Conversation): the conversation goes to Deleted Items, and so
+  does every later message in it (also those that came while SG Mail was
+  closed, when their folder is opened); Stop Ignoring Conversation in
+  Deleted Items brings it back. Ignored conversations are kept by SG Mail on
+  this computer.
+- **Quick Steps** (Home > Quick Steps, the message's menu, Ctrl+Shift+1..9):
+  Move to: ?, To Manager, Team Email, Done, Reply & Delete and Create New,
+  as the classic client has them; a step asks for its folder or address the
+  first time (First Time Setup); Manage Quick Steps edits, copies, reorders,
+  deletes and resets them. Actions: move, copy, delete, archive, read,
+  unread, flag, mark complete, categorize, reply, reply all, forward to,
+  new message to.
+- **Tasks** (Ctrl+4): the To-Do List (tasks and flagged mail by when they
+  are due: Overdue, Today, Tomorrow, This Week, Next Week, Later, No Date)
+  and each calendar's task list; "Type a new task", the task window (start
+  and due day, status, priority, % complete, reminder, notes), Mark
+  Complete, Follow Up (Today ... No Date, also on mail from Home > Follow
+  Up), views Active / Today / Overdue / Completed / All. Tasks are
+  Thunderbird's calendar tasks (VTODO, on a CalDAV server or this
+  computer); flagged mail is the IMAP flag (its due day kept on this
+  computer; Mark Complete clears the flag). **To-Do Bar** (View > To-Do Bar)
+  beside the mail, remembered.
+- **Scheduling Assistant** (a meeting's window): every attendee's busy time
+  for the day in a grid -- one's own calendars, the calendars of theirs one
+  has opened (shared calendars), and the free/busy their calendar server
+  gives (CalDAV scheduling: Thunderbird asks the server of a CalDAV calendar
+  that offers it); "No information" otherwise. AutoPick Next finds the next
+  half hour in the working day when all are free; a click in the grid moves
+  the meeting.
+- **Shared calendars** (Calendar > Open Calendar > Open Shared Calendar):
+  a colleague's calendar, by name or address, on the CalDAV server one's
+  own calendar is on, as far as they share it (read, or edit as a
+  delegate); listed under Shared Calendars, removed from its menu.
+- **Automatic Replies** (File > Automatic Replies): where the account's
+  server keeps mail rules (ManageSieve with Sieve vacation: Dovecot, Cyrus,
+  Stalwart and many hosts), the reply is set there, in the active Sieve
+  script beside the person's own rules, and goes out while this computer is
+  off (once to each sender, not to mailing lists, within the time range).
+  Where it does not (Exchange and Microsoft 365, OAuth-only accounts,
+  servers without ManageSieve), SG Mail answers from this computer instead,
+  only while it runs -- the dialog and the bar under the ribbon say so.
+
+Not there yet, against the classic desktop client in daily use: Room
+Finder; automatic replies set on Exchange or Microsoft 365 servers
+themselves (SG Mail's own answer from this computer stands in);
+conversations across folders in the message list (the reading pane has
+them); Clean Up of folders and subfolders.
 
 ![SG Mail, light](docs/screenshots/sg-mail-light.png)
 ![SG Mail's calendar, dark](docs/screenshots/sg-mail-calendar-dark.png)
 ![People, light](docs/screenshots/sg-mail-people-light.png)
+![A conversation, dark](docs/screenshots/sg-mail-conversations-dark.png)
+![Tasks, light](docs/screenshots/sg-mail-tasks-light.png)
+![The Scheduling Assistant, light](docs/screenshots/sg-mail-scheduling-light.png)
 
 (More in docs/screenshots: each light and dark, and the message window. The
-look gate takes them against the test servers.)
+look gate takes them against the test servers; the Scheduling Assistant's
+comes from the scheduling gate.)
 
 ## Thunderbird underneath
 
@@ -76,10 +132,13 @@ Mail's when Thunderbird runs with SG Mail's profile:
 - `experiments/` -- a privileged experiment API (`sgmail`) for what those
   APIs do not reach: taking over the main window, Send/Receive, sending a
   message written in our window (Thunderbird's own sending: SMTP, Sent copy,
-  drafts, Outbox), the calendar manager (calendars, events, recurrence,
-  meetings, iTIP accept/decline, events moved by the mouse), what the
-  Focused Inbox decides by, rules (Thunderbird's filters), and opening
-  Thunderbird's own account setup, account settings and options;
+  drafts, Outbox), the calendar manager (calendars, events, tasks,
+  recurrence, meetings, iTIP accept/decline, events moved by the mouse,
+  free/busy, shared calendars found over WebDAV), what the Focused Inbox
+  and conversations decide by, rules (Thunderbird's filters), automatic
+  replies on the server (a ManageSieve client, STARTTLS, the password
+  Thunderbird keeps for the account), and opening Thunderbird's own account
+  setup, account settings and options;
 - `background.js` -- claims each main window, and turns Thunderbird's own
   message windows (mailto: links, "send to") into ours.
 
@@ -120,7 +179,8 @@ next release.
     make xpi             # build/out/sg-mail@stained-glass-os.org.xpi
     make deb             # ../sg-mail_*_all.deb
     make root            # the test root (once): Debian trixie with Thunderbird,
-                         # Xvfb, Dovecot, Radicale, aiosmtpd (rootless mmdebstrap)
+                         # Xvfb, Dovecot (with Sieve and ManageSieve), Radicale,
+                         # aiosmtpd (rootless mmdebstrap)
     make test            # every gate
     make test TB_DEB=../thunderbird_157.0.1-sg1_amd64.deb
                          # every gate on that thunderbird package, over
@@ -128,8 +188,9 @@ next release.
     make test-mutation   # every gate against its mutants (test/mutants.json)
 
 The gates (`test/gate/*-gate.py`) run Thunderbird headless (Xvfb) in the test
-root with no network but its own loopback: Dovecot (IMAP), an aiosmtpd SMTP
-server that delivers locally, Radicale (CalDAV) and a small web server (the
+root with no network but its own loopback: Dovecot (IMAP; ManageSieve, and
+its delivery agent running Sieve), an aiosmtpd SMTP server that delivers
+locally, Radicale (CalDAV, with sharing rights) and a small web server (the
 account-setup lookup, and pictures whose fetches are counted). Nothing ever
 reaches a real mail provider. They drive SG Mail's windows through a test
 channel that exists only under a gate (`SG_MAIL_TEST_OUT`).

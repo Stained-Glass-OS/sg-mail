@@ -12,6 +12,9 @@ import { Ribbon, tellMeBox } from "./ribbon.js";
 import { MailModule } from "./mail.js";
 import { CalendarModule } from "./calendar.js";
 import { PeopleModule } from "./people.js";
+import { TasksModule } from "./tasks.js";
+import { QuickSteps } from "./quicksteps.js";
+import { AutoReplies } from "./autoreply.js";
 import { installTestHook } from "./testhook.js";
 
 class App {
@@ -22,6 +25,9 @@ class App {
     this.mail = new MailModule(this);
     this.calendar = new CalendarModule(this);
     this.people = new PeopleModule(this);
+    this.tasks = new TasksModule(this);
+    this.quickSteps = new QuickSteps(this);
+    this.autoReplies = new AutoReplies(this);
     this.buildNav();
     this.buildRibbon();
     this.wireKeys();
@@ -35,12 +41,16 @@ class App {
     } catch (e) {
       // not in a tab
     }
+    await this.quickSteps.load();
     await this.mail.start();
     await this.calendar.start();
     await this.people.start();
+    await this.tasks.start();
+    await this.autoReplies.load();
     const st = await messenger.storage.local.get(["module", "readingPane"]).catch(() => ({}));
     this.setReadingPane(st.readingPane || "right", false);
-    if (st.module === "calendar" || st.module === "people") this.showModule(st.module);
+    if (["calendar", "people", "tasks"].includes(st.module)) this.showModule(st.module);
+    else this.buildRibbon();
     this.updateRibbon();
     window.sgmailReady = true;
     testDump("ready.json", { ready: true });
@@ -59,6 +69,7 @@ class App {
     btn("mail", "mail", "Mail (Ctrl+1)", () => this.showModule("mail"));
     btn("calendar", "calendar", "Calendar (Ctrl+2)", () => this.showModule("calendar"));
     btn("people", "people", "People (Ctrl+3)", () => this.showModule("people"));
+    btn("tasks", "tasks", "Tasks (Ctrl+4)", () => this.showModule("tasks"));
     const more = btn("more", "more", "More", () => showMenu([
       { label: "Thunderbird's Address Book", icon: "address-book", action: () => messenger.sgmail.openTool("addressBook") },
       { label: "Message Filters…", icon: "filter", action: () => messenger.sgmail.openTool("filters") },
@@ -75,7 +86,7 @@ class App {
   showModule(name) {
     if (this.module === name) return;
     this.module = name;
-    for (const m of ["mail", "calendar", "people"]) {
+    for (const m of ["mail", "calendar", "people", "tasks"]) {
       $("#module-" + m).hidden = name !== m;
       $("#side-" + m).hidden = name !== m;
     }
@@ -86,6 +97,9 @@ class App {
       this.setTitle("People");
       this.people.show();
     }
+    if (name === "tasks") this.tasks.show();
+    // the To-Do Bar is the mail's
+    $("#todo-bar").hidden = !(name === "mail" && this.tasks.todoBar);
     if (name === "mail") {
       this.setTitle(this.mail.title || "Mail");
       this.mail.updateStatus();
@@ -116,7 +130,7 @@ class App {
   // ---- the ribbon ------------------------------------------------------------------------------------
 
   buildRibbon() {
-    const def = this.module === "calendar" ? this.calendar.ribbon() : this.module === "people" ? this.people.ribbon() : this.mailRibbon();
+    const def = this.module === "calendar" ? this.calendar.ribbon() : this.module === "people" ? this.people.ribbon() : this.module === "tasks" ? this.tasks.ribbon() : this.mailRibbon();
     def.file = el => this.fileMenu(el);
     def.extra = tellMeBox((text, input) => this.tellMe(text, input));
     this.ribbon = new Ribbon($("#ribbon"), def);
@@ -145,6 +159,8 @@ class App {
             { id: "delete", icon: "delete", label: "Delete", large: true, shortcut: "Delete", action: () => m.deleteSelected() },
             { id: "archive", icon: "archive", label: "Archive", large: true, shortcut: "Backspace", action: () => m.archiveSelected() },
             { col: [
+              { id: "ignore", icon: "ignore", label: "Ignore", title: "Ignore Conversation: its messages, and the ones that come, go to Deleted Items", action: () => m.ignoreConversation(sel()) },
+              { id: "clean-up", icon: "clean-up", label: "Clean Up", menu: () => m.cleanUpMenu() },
               { id: "junk", icon: "junk", label: "Junk", menu: () => [
                 { label: "Block Sender / Junk", action: () => m.junkSelected(true) },
                 { label: "Not Junk", action: () => m.junkSelected(false) },
@@ -156,6 +172,7 @@ class App {
             { id: "reply-all", icon: "reply-all", label: "Reply All", large: true, shortcut: "Ctrl+Shift+R", action: () => sel()[0] && m.compose({ mode: "replyAll", id: sel()[0].id }) },
             { id: "forward", icon: "forward", label: "Forward", large: true, shortcut: "Ctrl+F", action: () => sel()[0] && m.compose({ mode: "forward", id: sel()[0].id }) },
           ] },
+          { label: "Quick Steps", items: this.quickSteps.ribbonItems() },
           { label: "Move", items: [
             { id: "move", icon: "move", label: "Move", large: true, menu: () => m.moveMenu() },
             { col: [
@@ -166,7 +183,13 @@ class App {
             { col: [
               { id: "unread-read", icon: "mail-unread", label: "Unread/Read", shortcut: "Ctrl+Q / Ctrl+U", action: () => m.toggleRead() },
               { id: "categorize", icon: "category", label: "Categorize", menu: () => m.categorizeMenu() },
-              { id: "follow-up", icon: "flag", label: "Follow Up", shortcut: "Insert", action: () => m.flag(sel()) },
+              { id: "follow-up", icon: "flag", label: "Follow Up", shortcut: "Insert", action: () => m.flag(sel()), menu: () => [
+                ...[["today", "Today"], ["tomorrow", "Tomorrow"], ["thisweek", "This Week"], ["nextweek", "Next Week"], [null, "No Date"]]
+                  .map(([w, l]) => ({ label: l, icon: "flag", action: () => this.tasks.flagMail(sel(), w) })),
+                { separator: true },
+                { label: "Mark Complete", icon: "flag-done", action: () => sel().forEach(x => x.flagged && m.flag([x])) },
+                { label: "Clear Flag", action: () => sel().filter(x => x.flagged).length && m.flag(sel().filter(x => x.flagged)) },
+              ] },
             ] },
           ] },
           { label: "Find", items: [
@@ -224,6 +247,10 @@ class App {
             ] },
             { id: "reverse-sort", icon: "repeat", label: "Reverse Sort", large: true, action: () => { m.list.sort.desc = !m.list.sort.desc; m.relayout(); } },
           ] },
+          { label: "Messages", items: [
+            { id: "conversations", icon: "conversation", label: "Show as Conversations", large: true, title: "Show as Conversations: the messages of a conversation together",
+              action: () => m.setConversations(!m.list.conversations) },
+          ] },
           { label: "Layout", items: [
             { id: "reading-pane", icon: "reading-" + (this.readingPane || "right"), label: "Reading Pane", large: true, menu: () => [
               { label: "Right", icon: "reading-right", checked: this.readingPane === "right", action: () => this.setReadingPane("right") },
@@ -232,6 +259,10 @@ class App {
             ] },
             { id: "focused-inbox", icon: "focused", label: "Show Focused Inbox", large: true, title: "Show Focused Inbox: the Inbox in two tabs, Focused and Other",
               action: () => m.setFocusedInbox(!m.focus.on) },
+            { id: "todo-bar", icon: "tasks", label: "To-Do Bar", large: true, menu: () => [
+              { label: "Tasks", checked: this.tasks.todoBar, action: () => this.tasks.setTodoBar(true) },
+              { label: "Off", checked: !this.tasks.todoBar, action: () => this.tasks.setTodoBar(false) },
+            ] },
             { id: "folder-pane-toggle", icon: "folder", label: "Folder Pane", large: true, menu: () => [
               { label: "Normal", checked: !$("#side").classList.contains("min"), action: () => this.setFolderPane(true) },
               { label: "Off", checked: $("#side").classList.contains("min"), action: () => this.setFolderPane(false) },
@@ -250,10 +281,13 @@ class App {
 
   updateRibbon() {
     if (this.ribbon && this.module === "people") return this.people.updateRibbon();
+    if (this.ribbon && this.module === "tasks") return this.tasks.updateRibbon();
     if (!this.ribbon || this.module !== "mail") return;
     const sel = this.mail.selection();
     const one = sel.length === 1;
-    for (const id of ["delete", "archive", "junk", "move", "unread-read", "follow-up", "categorize"]) this.ribbon.enable(id, sel.length > 0);
+    for (const id of ["delete", "archive", "junk", "move", "unread-read", "follow-up", "categorize", "ignore"]) this.ribbon.enable(id, sel.length > 0);
+    this.ribbon.toggle("conversations", !!this.mail.list.conversations);
+    this.ribbon.toggle("todo-bar", !!this.tasks.todoBar);
     for (const id of ["reply", "reply-all", "forward"]) this.ribbon.enable(id, one);
     this.ribbon.toggle("work-offline", !!this.offline);
     this.ribbon.toggle("focused-inbox", !!this.mail.focus.on);
@@ -289,6 +323,7 @@ class App {
       { header: "Account Information" },
       { label: "Add Account…", icon: "account-add", action: () => messenger.sgmail.openTool("accountSetup") },
       { label: "Account Settings…", icon: "settings", action: () => messenger.sgmail.openTool("accountSettings") },
+      { label: "Automatic Replies…", icon: "out-of-office", action: () => this.autoReplies.open() },
       { separator: true },
       { label: "Open & Export", icon: "import", submenu: [
         { label: "Open Calendar (.ics)…", action: () => this.calendar.importIcs() },
@@ -341,6 +376,14 @@ class App {
       ["mail inbox", () => this.showModule("mail")],
       ["filters rules", () => messenger.sgmail.openTool("filters")],
       ["import ics calendar", () => this.calendar.importIcs()],
+      ["automatic replies out of office vacation", () => this.autoReplies.open()],
+      ["quick steps manage", () => this.quickSteps.manage()],
+      ["clean up folder", () => this.mail.cleanUp("folder")],
+      ["ignore conversation", () => this.mail.ignoreConversation(this.mail.selection())],
+      ["show as conversations threads", () => this.mail.setConversations(!this.mail.list.conversations)],
+      ["tasks to-do todo", () => this.showModule("tasks")],
+      ["new task", () => this.tasks.editTask(null)],
+      ["open shared calendar", () => this.calendar.openShared()],
     ];
     const hit = commands.find(([k]) => words.split(/\s+/).every(w => k.includes(w))) || commands.find(([k]) => words.split(/\s+/).some(w => k.includes(w)));
     if (hit) {
@@ -415,12 +458,14 @@ class App {
     if (ctrl && !shift && !alt && key === "1") return run(() => this.showModule("mail"));
     if (ctrl && !shift && !alt && key === "2") return run(() => this.showModule("calendar"));
     if (ctrl && !shift && !alt && key === "3") return run(() => this.showModule("people"));
+    if (ctrl && !shift && !alt && key === "4") return run(() => this.showModule("tasks"));
     if (ctrl && shift && key === "m") return run(() => m.compose({ mode: "new" }));
     if (ctrl && shift && key === "a") return run(() => cal.newEvent({}));
     if (ctrl && shift && key === "q") return run(() => cal.newEvent({ meeting: true }));
     if (key === "F9" && !ctrl && !shift) return run(() => this.sendReceive());
     if (key === "F9" && shift) return run(() => m.folder && !m.folder.virtual && messenger.sgmail.updateFolder(m.folder.id).then(() => m.reload(true)));
-    if (ctrl && !shift && key === "n") return run(() => this.module === "calendar" ? cal.newEvent({}) : this.module === "people" ? this.people.editContact(null) : m.compose({ mode: "new" }));
+    if (ctrl && !shift && key === "n") return run(() => this.module === "calendar" ? cal.newEvent({}) : this.module === "people" ? this.people.editContact(null) :
+      this.module === "tasks" ? this.tasks.editTask(null) : m.compose({ mode: "new" }));
     if (ctrl && !shift && key === "e" || key === "F3") return run(() => this.module === "mail" ? $("#search").focus() : this.module === "people" ? $("#pp-search").focus() : null);
     if (ctrl && shift && key === "i") return run(() => {
       this.showModule("mail");
@@ -429,6 +474,10 @@ class App {
     });
     if (this.module === "people") {
       if (!typing && key === "Delete") return run(() => this.people.deleteSelected());
+      return;
+    }
+    if (this.module === "tasks") {
+      if (!typing && key === "Delete") return run(() => this.tasks.deleteSelected());
       return;
     }
     if (this.module === "calendar") {
@@ -456,6 +505,9 @@ class App {
     if (ctrl && !shift && key === "u") return run(() => m.markRead(sel, false));
     if (ctrl && shift && key === "v") return run(() => m.moveDialog());
     if (key === "Insert") return run(() => m.flag(sel));
+    // Quick Steps by their keys: Ctrl+Shift+1..9 (the digit's key, whatever the layout types)
+    const digit = (e.code || "").match(/^(?:Digit|Numpad)([1-9])$/);
+    if (ctrl && shift && digit && this.quickSteps.byShortcut(digit[1])) return run(() => this.quickSteps.run(this.quickSteps.byShortcut(digit[1])));
     if (key === "Delete") return run(() => m.deleteSelected(shift));
     if (key === "Backspace" && !ctrl) return run(() => m.archiveSelected());
     if (ctrl && key === "p") return run(() => m.reader.print());
@@ -510,6 +562,15 @@ installTestHook("main", {
   mail: () => app.mail.dump(),
   calendar: () => app.calendar.dump(),
   people: () => app.people.dump(),
+  tasks: () => app.tasks.dump(),
+  quickSteps: () => app.quickSteps.dump(),
+  autoReplies: () => app.autoReplies.dump(),
+  selectConversation: a => {
+    const row = app.mail.list.rows.find(r => r.type === "conv" && r.msgs.some(x => x.subject === a.subject || x.subject.endsWith(a.subject)));
+    if (!row) throw new Error("no conversation " + a.subject);
+    app.mail.list.select("c:" + row.conv);
+    return row.conv;
+  },
   selectFolder: a => {
     const f = [...app.mail.folders.folders.values()].find(x => (a.account ? x.accountId === a.account || app.mail.accountLabel(x) === a.account : true)
       && (x.name === a.name || app.mail.folders.el.querySelector(`.fp-row[data-id="${CSS.escape(x.id)}"] .fp-name`)?.textContent === a.name));
