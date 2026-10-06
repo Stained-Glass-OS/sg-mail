@@ -76,6 +76,8 @@ async function init() {
   $("#attendees").value = ev.attendees.map(a => formatAddress({ name: a.name, email: a.email })).join("; ");
   // a meeting asked for from People: its invitees already in
   if (state.isNew && params.get("attendees")) $("#attendees").value = params.get("attendees");
+  // (a meeting from a message: its subject)
+  if (state.isNew && params.get("title")) $("#title").value = params.get("title");
   if (ev.organizer && !ev.iAmOrganizer) {
     $("#org-row").hidden = false;
     $("#organizer").textContent = formatAddress(ev.organizer);

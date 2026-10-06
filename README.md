@@ -10,7 +10,17 @@ the familiar ones (Ctrl+N, Ctrl+R, Ctrl+Shift+R, Ctrl+F forward, Ctrl+E
 search, Ctrl+Q / Ctrl+U read/unread, Insert flag, Delete, Backspace archive,
 Ctrl+Shift+V move, F9 Send/Receive, Ctrl+1 / Ctrl+2 / Ctrl+3 / Ctrl+4 Mail
 / Calendar / People / Tasks, Ctrl+Alt+1..4 calendar views, Ctrl+Shift+1..9
-Quick Steps).
+Quick Steps, Ctrl+A every message of the view).
+
+- **Many messages at once**: Ctrl+A (the list focused; in a text field it
+  selects the text) selects every message of the view -- shown as
+  conversations, every conversation's -- and the reading pane says how many.
+  Home > Unread/ Read marks them read, or unread when all are read; Ctrl+Q,
+  Ctrl+U and the right-click menu's Mark as Read / Mark as Unread too; Follow
+  Up, Categorize, Move, Archive and Delete act on all of them. Read and flag
+  changes go to an IMAP server as one change a folder. Respond > Meeting: a
+  meeting with the message's people. A folder's right-click: Mark All as
+  Read.
 
 - **Focused Inbox**: the Inbox in two tabs, Focused and Other. Bulk mail
   (mailing lists, newsletters, no-reply senders: their List-Unsubscribe,

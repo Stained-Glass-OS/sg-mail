@@ -104,6 +104,11 @@ const COMMANDS = {
     el.dispatchEvent(new Event("change", { bubbles: true }));
     return el.value;
   },
+  // the text selected in a field
+  textSelection: a => {
+    const el = find(a.selector, a);
+    return [el.selectionStart, el.selectionEnd];
+  },
   focus(a) {
     find(a.selector, a).focus();
     return true;

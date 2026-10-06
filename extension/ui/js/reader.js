@@ -49,6 +49,8 @@ export class ReadingPane {
 
   showEmpty(text = "Select an item to read") {
     this.cards = null;
+    // a message still loading is not shown over this
+    this.token = Symbol("empty");
     clearTimeout(this.readTimer);
     this.message = null;
     this.state = { empty: true };
@@ -57,6 +59,7 @@ export class ReadingPane {
 
   showMany(n) {
     this.showEmpty(`${n} items selected`);
+    this.state.many = n;
   }
 
   async show(msg) {
@@ -105,6 +108,8 @@ export class ReadingPane {
     } catch (e) {
       // no
     }
+    // something else chosen meanwhile (another message, many of them)
+    if (this.token !== token) return;
     this.state = { id: msg.id, body, cid, attachments: shownAttachments, allowRemote, sender, full };
     this.render();
     // read once shown for a moment, as Outlook's "mark as read when viewed"
@@ -413,7 +418,7 @@ export class ReadingPane {
   }
 
   dump() {
-    if (!this.message) return { empty: true };
+    if (!this.message) return { empty: true, many: this.state.many || 0 };
     if (this.state.conversation) {
       return {
         id: this.message.id,

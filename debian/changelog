@@ -1,3 +1,23 @@
+sg-mail (0.1.0-11) unstable; urgency=medium
+
+  * Ctrl+A in the message list selects every message of the view (also in
+    groups closed, and shown as conversations every conversation's); the
+    reading pane says "N items selected". Ctrl+A in text fields still
+    selects their text.
+  * Read / unread and flags on many messages in one change a folder (one
+    IMAP STORE for them all) instead of one a message: Unread/ Read (all
+    read -> unread, else read), Ctrl+Q / Ctrl+U, Follow Up.
+  * The message's right-click menu has both Mark as Read and Mark as
+    Unread. Home > Respond > Meeting: a meeting with the message's people,
+    its subject the meeting's.
+  * A message chosen and then a range Shift+clicked quickly no longer
+    blanks the reading pane (the first message's late answer overwrote it).
+  * Gate multiselect (new, a real Ctrl+A typed): select all, Unread/ Read,
+    Ctrl+Q/U, the menu, Follow Up, Categorize, Meeting, Move, Archive,
+    Delete on many, a folder's Mark All as Read; 8 mutants, all killed.
+
+ -- Stained Glass OS <dev@stained-glass.example>  Tue, 06 Oct 2026 22:00:00 +0000
+
 sg-mail (0.1.0-10) unstable; urgency=medium
 
   * Microsoft accounts (DavMail): what Outlook shows beside one's own

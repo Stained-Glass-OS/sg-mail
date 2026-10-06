@@ -176,6 +176,9 @@ class App {
             { id: "reply", icon: "reply", label: "Reply", large: true, shortcut: "Ctrl+R", action: () => sel()[0] && m.compose({ mode: "reply", id: sel()[0].id }) },
             { id: "reply-all", icon: "reply-all", label: "Reply All", large: true, shortcut: "Ctrl+Shift+R", action: () => sel()[0] && m.compose({ mode: "replyAll", id: sel()[0].id }) },
             { id: "forward", icon: "forward", label: "Forward", large: true, shortcut: "Ctrl+F", action: () => sel()[0] && m.compose({ mode: "forward", id: sel()[0].id }) },
+            { col: [
+              { id: "reply-meeting", icon: "meeting-new", label: "Meeting", title: "Reply with Meeting: a meeting with the message's people", action: () => m.replyWithMeeting(sel()[0]) },
+            ] },
           ] },
           { label: "Quick Steps", items: this.quickSteps.ribbonItems() },
           { label: "Move", items: [
@@ -293,7 +296,7 @@ class App {
     for (const id of ["delete", "archive", "junk", "move", "unread-read", "follow-up", "categorize", "ignore"]) this.ribbon.enable(id, sel.length > 0);
     this.ribbon.toggle("conversations", !!this.mail.list.conversations);
     this.ribbon.toggle("todo-bar", !!this.tasks.todoBar);
-    for (const id of ["reply", "reply-all", "forward"]) this.ribbon.enable(id, one);
+    for (const id of ["reply", "reply-all", "forward", "reply-meeting"]) this.ribbon.enable(id, one);
     this.ribbon.toggle("work-offline", !!this.offline);
     this.ribbon.toggle("focused-inbox", !!this.mail.focus.on);
   }
@@ -505,6 +508,8 @@ class App {
     if (key === "Escape" && t === $("#search")) return run(() => m.clearSearch());
     if (typing) return;
     const sel = m.selection();
+    // Ctrl+A: every message of the view, unless the reading pane has the focus (its text)
+    if (ctrl && !shift && !alt && key === "a" && !(document.activeElement && document.activeElement.tagName === "IFRAME")) return run(() => m.list.selectAll());
     if (ctrl && !shift && key === "r") return run(() => sel[0] && m.compose({ mode: "reply", id: sel[0].id }));
     if (ctrl && shift && key === "r") return run(() => sel[0] && m.compose({ mode: "replyAll", id: sel[0].id }));
     if (ctrl && !shift && key === "f") return run(() => sel[0] && m.compose({ mode: "forward", id: sel[0].id }));
@@ -585,6 +590,13 @@ installTestHook("main", {
     if (!f) throw new Error("no folder " + a.name);
     app.mail.folders.select(f.id);
     return f.id;
+  },
+  // a row clicked with Shift or Ctrl held (a range, or one more)
+  clickRow: a => {
+    const m = app.mail.list.messages.find(x => x.subject === a.subject);
+    if (!m) throw new Error("no message " + a.subject);
+    app.mail.list.clickRow(m.id, { shiftKey: !!a.shift, ctrlKey: !!a.ctrl });
+    return m.id;
   },
   selectMessage: a => {
     const m = app.mail.list.messages.find(x => x.subject === a.subject);

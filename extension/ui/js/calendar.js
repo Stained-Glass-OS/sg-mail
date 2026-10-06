@@ -1115,7 +1115,7 @@ export class CalendarModule {
 
   // ---- events ----------------------------------------------------------------------------------------
 
-  newEvent({ start, end, allDay, meeting, attendees } = {}) {
+  newEvent({ start, end, allDay, meeting, attendees, title } = {}) {
     if (!this.writableCalendars().length) {
       toast("There is no calendar to put it in: add one first (Open Calendar).");
       return;
@@ -1136,6 +1136,7 @@ export class CalendarModule {
     if (allDay) q.set("allDay", "1");
     if (meeting) q.set("meeting", "1");
     if (attendees) q.set("attendees", attendees);
+    if (title) q.set("title", title);
     return this.openWindow(q);
   }
 

@@ -1046,5 +1046,69 @@
   "find": "const SG_MUTANT_DAVMAIL_NO_PROBE = false;",
   "replace": "const SG_MUTANT_DAVMAIL_NO_PROBE = true;",
   "why": "a mailbox one may not open added anyway (Thunderbird then asks for a password again and again)"
+ },
+ {
+  "name": "multi-select-all",
+  "gate": "multiselect-gate.py",
+  "file": "ui/js/msglist.js",
+  "find": "    this.selected = new Set((this.allKeys || this.order).filter(k => typeof k === \"string\" || !this.conversationOf(k)));",
+  "replace": "    this.selected = new Set(this.order.slice(0, 1));",
+  "why": "Ctrl+A selecting one message"
+ },
+ {
+  "name": "multi-select-all-conversations",
+  "gate": "multiselect-gate.py",
+  "file": "ui/js/msglist.js",
+  "find": "    this.selected = new Set((this.allKeys || this.order).filter(k => typeof k === \"string\" || !this.conversationOf(k)));",
+  "replace": "    this.selected = new Set((this.allKeys || this.order).filter(k => typeof k !== \"string\" && !this.conversationOf(k)));",
+  "why": "Ctrl+A leaving out conversations"
+ },
+ {
+  "name": "multi-ctrl-a-text",
+  "gate": "multiselect-gate.py",
+  "file": "ui/js/main.js",
+  "find": "    if (typing) return;\n    const sel = m.selection();\n    // Ctrl+A: every message of the view, unless the reading pane has the focus (its text)\n",
+  "replace": "    if (ctrl && key === \"a\") return run(() => m.list.selectAll());\n    if (typing) return;\n    const sel = m.selection();\n",
+  "why": "Ctrl+A in the search box taken from its text"
+ },
+ {
+  "name": "multi-toggle",
+  "gate": "multiselect-gate.py",
+  "file": "ui/js/mail.js",
+  "find": "    this.markRead(sel, !sel.every(m => m.read));",
+  "replace": "    this.markRead(sel, true);",
+  "why": "Unread/ Read never marking unread"
+ },
+ {
+  "name": "multi-batch-read",
+  "gate": "multiselect-gate.py",
+  "file": "experiments/parent.js",
+  "find": "              if (want.length) folder.markMessagesRead(want, !!change.read);",
+  "replace": "              if (want.length) folder.markMessagesRead(want.slice(0, 1), !!change.read);",
+  "why": "only part of a large selection marked read"
+ },
+ {
+  "name": "multi-batch-flag",
+  "gate": "multiselect-gate.py",
+  "file": "experiments/parent.js",
+  "find": "              if (want.length) folder.markMessagesFlagged(want, !!change.flagged);",
+  "replace": "",
+  "why": "Follow Up not flagging on the server"
+ },
+ {
+  "name": "multi-menu-unread",
+  "gate": "multiselect-gate.py",
+  "file": "ui/js/mail.js",
+  "find": "      { label: \"Mark as Unread\", icon: \"mail-unread\", shortcut: \"Ctrl+U\", disabled: sel.every(m => !m.read), action: () => this.markRead(sel, false) },",
+  "replace": "",
+  "why": "no Mark as Unread on the right-click menu"
+ },
+ {
+  "name": "multi-meeting",
+  "gate": "multiselect-gate.py",
+  "file": "ui/js/mail.js",
+  "find": "    return this.app.calendar.newEvent({ meeting: true, attendees: people.join(\"; \"), title: baseSubject(m.subject) });",
+  "replace": "    return this.app.calendar.newEvent({ meeting: true });",
+  "why": "Meeting without the message's people"
  }
 ]

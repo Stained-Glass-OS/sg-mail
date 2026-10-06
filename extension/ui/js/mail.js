@@ -732,16 +732,20 @@ export class MailModule {
     return a && a.identities[0] ? a.identities[0].id : "";
   }
 
+  // read or unread: the list at once, the server in one go
   async markRead(msgs, read) {
-    for (const m of msgs) {
-      if (m.read === read) continue;
+    const change = msgs.filter(m => m.read !== read);
+    if (!change.length) return;
+    for (const m of change) {
       m.read = read;
       this.list.update(m);
-      try {
-        await messenger.messages.update(m.id, { read });
-      } catch (e) {
-        console.error(e);
-      }
+    }
+    this.paintFocusTabs();
+    try {
+      await messenger.sgmail.markMessages(change.map(m => m.id), { read });
+    } catch (e) {
+      console.error(e);
+      toast("Could not mark them: " + e.message);
     }
     this.app.updateRibbon();
   }
@@ -755,10 +759,15 @@ export class MailModule {
   async flag(msgs) {
     if (!msgs.length) return;
     const on = !msgs.every(m => m.flagged);
-    for (const m of msgs) {
+    const change = msgs.filter(m => !!m.flagged !== on);
+    for (const m of change) {
       m.flagged = on;
       this.list.update(m);
-      await messenger.messages.update(m.id, { flagged: on });
+    }
+    try {
+      await messenger.sgmail.markMessages(change.map(m => m.id), { flagged: on });
+    } catch (e) {
+      toast("Could not flag them: " + e.message);
     }
     this.app.updateRibbon();
   }
@@ -893,6 +902,21 @@ export class MailModule {
     this.app.setStatus(`Rule made: messages from ${email} go to ${folderLabel(this.folders.folders.get(target) || { name: "the folder", specialUse: [] })}`);
   }
 
+  // Respond > Meeting: a meeting with the message's sender and the others
+  // it went to, its subject the meeting's
+  replyWithMeeting(m) {
+    if (!m) return;
+    const mine = new Set(this.folders.accounts.flatMap(a => a.identities.map(i => (i.email || "").toLowerCase())));
+    const seen = new Set();
+    const people = [m.author, ...(m.recipients || []), ...(m.ccList || [])].filter(a => {
+      const e = parseAddress(a).email.toLowerCase();
+      if (!e || mine.has(e) || seen.has(e)) return false;
+      seen.add(e);
+      return true;
+    });
+    return this.app.calendar.newEvent({ meeting: true, attendees: people.join("; "), title: baseSubject(m.subject) });
+  }
+
   // Ignore (or, in Deleted Items for an ignored one, Stop Ignoring)
   ignoreItem(sel) {
     const stop = this.folder && roleOf(this.folder) === "trash" && sel.some(m => this.isIgnored(m.id));
@@ -929,8 +953,8 @@ export class MailModule {
       { label: "Reply All", icon: "reply-all", shortcut: "Ctrl+Shift+R", disabled: !one, action: () => this.compose({ mode: "replyAll", id: sel[0].id }) },
       { label: "Forward", icon: "forward", shortcut: "Ctrl+F", disabled: !one, action: () => this.compose({ mode: "forward", id: sel[0].id }) },
       { separator: true },
-      unread ? { label: "Mark as Read", icon: "mail-read", shortcut: "Ctrl+Q", action: () => this.markRead(sel, true) }
-        : { label: "Mark as Unread", icon: "mail-unread", shortcut: "Ctrl+U", action: () => this.markRead(sel, false) },
+      { label: "Mark as Read", icon: "mail-read", shortcut: "Ctrl+Q", disabled: !unread, action: () => this.markRead(sel, true) },
+      { label: "Mark as Unread", icon: "mail-unread", shortcut: "Ctrl+U", disabled: sel.every(m => !m.read), action: () => this.markRead(sel, false) },
       { label: sel.every(m => m.flagged) ? "Clear Flag" : "Flag", icon: "flag", shortcut: "Insert", action: () => this.flag(sel) },
       { separator: true },
       ...(this.focusShown() ? (() => {

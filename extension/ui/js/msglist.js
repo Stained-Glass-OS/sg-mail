@@ -133,7 +133,11 @@ export class MessageList {
     const rows = [];
     let top = 0, lastGroup = null, groupRow = null;
     this.order = [];
+    // every item of the view, also in groups closed (what Ctrl+A selects)
+    this.allKeys = [];
     for (const it of this.items()) {
+      this.allKeys.push(it.conv ? "c:" + it.conv : it.msg.id);
+      if (it.conv && this.expanded.has(it.conv)) for (const c of it.msgs) this.allKeys.push(c.id);
       const m = it.msg;
       const g = this.groupOf(m);
       if (g && (!lastGroup || g.key !== lastGroup.key)) {
@@ -404,7 +408,7 @@ export class MessageList {
   // the selected messages: a conversation's are all of its messages here
   selection() {
     const out = [], seen = new Set();
-    for (const k of this.order) {
+    for (const k of this.allKeys || this.order) {
       if (!this.selected.has(k)) continue;
       const list = typeof k === "string" ? this.convs.get(k.slice(2)) || [] : [this.byId.get(k)];
       for (const m of list) {
@@ -452,8 +456,10 @@ export class MessageList {
     return true;
   }
 
+  // Ctrl+A: every message of the view (a conversation's row stands for all of its)
   selectAll() {
-    this.selected = new Set(this.order);
+    this.selected = new Set((this.allKeys || this.order).filter(k => typeof k === "string" || !this.conversationOf(k)));
+    if (this.focusId === null && this.order.length) this.focusId = this.anchor = this.order[0];
     this.paintSelection();
     this.onSelect(this.selection());
   }

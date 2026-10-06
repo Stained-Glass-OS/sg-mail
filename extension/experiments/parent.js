@@ -1409,6 +1409,36 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
           return result;
         },
 
+        // read / unread or flagged / not for many messages at once: one
+        // change a folder (an IMAP server gets one STORE for them all)
+        async markMessages(ids, change) {
+          const byFolder = new Map();
+          for (const id of ids) {
+            let hdr;
+            try {
+              hdr = msgHdr(id);
+            } catch (e) {
+              continue;
+            }
+            if (!byFolder.has(hdr.folder)) byFolder.set(hdr.folder, []);
+            byFolder.get(hdr.folder).push(hdr);
+          }
+          let n = 0;
+          for (const [folder, hdrs] of byFolder) {
+            if ("read" in change) {
+              const want = hdrs.filter(h => h.isRead !== !!change.read);
+              if (want.length) folder.markMessagesRead(want, !!change.read);
+              n += want.length;
+            }
+            if ("flagged" in change) {
+              const want = hdrs.filter(h => h.isFlagged !== !!change.flagged);
+              if (want.length) folder.markMessagesFlagged(want, !!change.flagged);
+              n += want.length;
+            }
+          }
+          return n;
+        },
+
         async markDisposition(messageId, kind) {
           const hdr = msgHdr(messageId);
           hdr.folder.addMessageDispositionState(hdr, kind === "forwarded"

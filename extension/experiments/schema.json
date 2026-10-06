@@ -772,6 +772,27 @@
       "type": "string"
      }
     ]
+   },
+   {
+    "name": "markMessages",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "ids",
+      "type": "array",
+      "items": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "change",
+      "type": "object",
+      "additionalProperties": {
+       "type": "any"
+      }
+     }
+    ]
    }
   ],
   "events": [
