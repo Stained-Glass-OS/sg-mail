@@ -6,12 +6,15 @@
 Description=SG Mail calendar and contacts gateway (DavMail) for %i
 Documentation=man:systemd.service(5) https://davmail.sourceforge.net/
 ConditionPathExists=%E/sg-mail/davmail/%i/davmail.properties
+# started again whenever it ends, but not in a tight loop
+StartLimitIntervalSec=300
+StartLimitBurst=20
 
 [Service]
 Type=exec
 ExecStart=/usr/lib/sg-mail/sg-mail-davmail run %i
-Restart=on-failure
-RestartSec=15
+Restart=always
+RestartSec=2
 UMask=0077
 NoNewPrivileges=yes
-MemoryHigh=400M
+MemoryHigh=1200M

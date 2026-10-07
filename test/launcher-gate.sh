@@ -58,6 +58,7 @@ P="$W/home/.local/share/sg-mail/profile"
 run
 [ "$(cat "$P/extensions/sg-mail@stained-glass-os.org.xpi" 2>/dev/null)" = XPI-1 ] && pass "the extension is laid into SG Mail's profile" || fail "no extension in the profile"
 grep -q '"sgmail.profile", true' "$P/user.js" 2>/dev/null && pass "SG Mail's settings are in its user.js" || fail "no user.js"
+grep -q '^user_pref("mail.imap.fetch_by_chunks", false);' "$P/user.js" 2>/dev/null && pass "whole messages in one fetch (no 64 KB chunks: each one a round trip through DavMail)" || fail "IMAP fetches in chunks"
 cmp -s "$P/chrome/userChrome.css" "$HERE/launcher/userChrome.css" && grep -q 'legacyUserProfileCustomizations.stylesheets", true' "$P/user.js" \
     && pass "no glimpse of Thunderbird's own view at start (userChrome.css, enabled)" || fail "no userChrome.css"
 [ "$(tail -n1 "$P/user.js" 2>/dev/null)" = 'user_pref("mail.server.default.check_time", 30);' ] && pass "an administrator's settings come last (they win)" || fail "the policy is not last"

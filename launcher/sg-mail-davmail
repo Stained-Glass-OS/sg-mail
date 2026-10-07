@@ -195,6 +195,11 @@ run)
     d=$(dir_of "$name")
     [ -f "$d/davmail.properties" ] || die "$name is not set up"
     umask 077
+    # room for a big mailbox's folder cache (DavMail keeps one per folder for
+    # Graph delta sync), and out at once if it is not enough -- systemd starts
+    # it again -- rather than a gateway that no longer answers
+    : "${SG_DAVMAIL_JAVA_OPTS:=-Xmx1g -XX:+ExitOnOutOfMemoryError -Dsun.net.inetaddr.ttl=60 --enable-native-access=ALL-UNNAMED}"
+    export SG_DAVMAIL_JAVA_OPTS
     exec "$DAVMAIL" "$d/davmail.properties" -notray -server
     ;;
 start)

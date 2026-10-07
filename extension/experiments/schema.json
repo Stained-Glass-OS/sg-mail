@@ -793,6 +793,63 @@
       }
      }
     ]
+   },
+   {
+    "name": "prefetchMessages",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "ids",
+      "type": "array",
+      "items": {
+       "type": "integer"
+      }
+     }
+    ]
+   },
+   {
+    "name": "prefetchNewest",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "folderId",
+      "type": "string"
+     },
+     {
+      "name": "limit",
+      "type": "integer",
+      "optional": true
+     },
+     {
+      "name": "days",
+      "type": "integer",
+      "optional": true
+     },
+     {
+      "name": "batch",
+      "type": "integer",
+      "optional": true
+     }
+    ]
+   },
+   {
+    "name": "davmailMailAccounts",
+    "type": "function",
+    "async": true,
+    "parameters": []
+   },
+   {
+    "name": "pausePrefetch",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "ms",
+      "type": "integer"
+     }
+    ]
    }
   ],
   "events": [
@@ -820,6 +877,19 @@
     "parameters": [
      {
       "name": "request",
+      "type": "object",
+      "additionalProperties": {
+       "type": "any"
+      }
+     }
+    ]
+   },
+   {
+    "name": "onGatewayTrouble",
+    "type": "function",
+    "parameters": [
+     {
+      "name": "info",
       "type": "object",
       "additionalProperties": {
        "type": "any"

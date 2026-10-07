@@ -41,6 +41,7 @@ export class MailModule {
       forward: m => this.compose({ mode: "forward", id: m.id }),
       compose: args => this.compose(args),
       markRead: (msgs, read) => this.markRead(msgs, read),
+      prefetchAround: msg => this.prefetchAround(msg),
       viewSource: m => this.viewSource(m),
       openFolderOf: m => this.showInFolder(m),
     });
@@ -84,7 +85,12 @@ export class MailModule {
         const first = this.folders.firstInbox();
         if (first && !this.folder) this.folders.select(first.id);
       }
+      setTimeout(() => this.prefetchNewest(), 3000);
     });
+    // the newest mail of Microsoft accounts (DavMail) kept here ahead, and
+    // again now and then (new mail tops it up)
+    setTimeout(() => this.prefetchNewest(), 5000);
+    setInterval(() => this.prefetchNewest(), 10 * 60000);
   }
 
   // the people written to are in the Sent folders: their news first (an
@@ -164,7 +170,11 @@ export class MailModule {
         if (here.length) this.addToList(here);
       }
     });
-    messenger.messages.onNewMailReceived.addListener((folder, list) => this.onNewMail(folder, list));
+    messenger.messages.onNewMailReceived.addListener((folder, list) => {
+      this.onNewMail(folder, list);
+      // new mail of a Microsoft account (DavMail): fetched here at once
+      messenger.sgmail.prefetchMessages((list.messages || []).map(x => x.id)).catch(() => {});
+    });
     // a new contact is someone known: the Focused Inbox decides again
     const contactsChanged = debounce(() => {
       this.focus.info.clear();
@@ -732,7 +742,8 @@ export class MailModule {
     return a && a.identities[0] ? a.identities[0].id : "";
   }
 
-  // read or unread: the list at once, the server in one go
+  // read or unread: the list at once, the server in one go (in the
+  // background: a click never waits for it)
   async markRead(msgs, read) {
     const change = msgs.filter(m => m.read !== read);
     if (!change.length) return;
@@ -748,6 +759,37 @@ export class MailModule {
       toast("Could not mark them: " + e.message);
     }
     this.app.updateRibbon();
+  }
+
+  // the messages beside one just opened, fetched ahead (Microsoft accounts
+  // through DavMail and other IMAP accounts: the next arrow key is instant)
+  prefetchAround(msg) {
+    const list = this.list.messages || [];
+    const order = this.list.order ? this.list.order.filter(k => typeof k === "number") : list.map(x => x.id);
+    const i = order.indexOf(msg.id);
+    if (i < 0) return;
+    const ids = [order[i + 1], order[i - 1], order[i + 2]].filter(x => x !== undefined);
+    if (ids.length) messenger.sgmail.prefetchMessages(ids).catch(() => {});
+  }
+
+  // Microsoft accounts through DavMail: each folder's newest messages kept
+  // here ahead of their opening, newest first (Inbox and Sent Items first)
+  async prefetchNewest() {
+    if (this.prefetching) return;
+    this.prefetching = true;
+    try {
+      const ids = await messenger.sgmail.davmailMailAccounts();
+      for (const id of ids) {
+        for (const role of ["inbox", "sent"]) {
+          const f = this.folders.folderByRole(id, role);
+          if (!f) continue;
+          const r = await messenger.sgmail.prefetchNewest(f.id, 500, 30, 5).catch(e => console.error("sg-mail: prefetch", e));
+          if (r) this.prefetchLog = (this.prefetchLog || []).concat({ folder: f.id, queued: r.queued, order: r.order }).slice(-10);
+        }
+      }
+    } finally {
+      this.prefetching = false;
+    }
   }
 
   toggleRead() {

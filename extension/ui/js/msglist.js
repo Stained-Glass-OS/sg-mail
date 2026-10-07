@@ -605,18 +605,29 @@ export class MessageList {
     }
     if (!want.length) return;
     for (const id of want) this.extras.set(id, {});     // asked once
+    // a little at a time, giving way to the person's own clicks (through a
+    // Microsoft account's DavMail gateway a preview is a whole message)
+    const idle = async () => {
+      while (performance.now() < (window.sgmailBusyUntil || 0)) await new Promise(r => setTimeout(r, 200));
+    };
     try {
-      const got = await messenger.sgmail.messageExtras(want);
-      for (const x of got) {
-        this.extras.set(x.id, x);
-        const m = this.byId.get(x.id);
-        if (m) this.update(m);
+      const got = [];
+      for (let i = 0; i < want.length; i += 8) {
+        await idle();
+        const part = await messenger.sgmail.messageExtras(want.slice(i, i + 8));
+        got.push(...part);
+        for (const x of part) {
+          this.extras.set(x.id, x);
+          const m = this.byId.get(x.id);
+          if (m) this.update(m);
+        }
       }
       // Thunderbird keeps no first words for messages it has not stored
       // offline: read the text of the ones in view
       for (const x of got.filter(g => !g.preview)) {
         const conv = this.conversationOf(x.id);
         if (!this.drawn.has("m:" + x.id) && !(conv && this.drawn.has("c:" + conv) && (this.convs.get(conv) || [])[0]?.id === x.id)) continue;
+        await idle();
         try {
           const parts = await messenger.messages.listInlineTextParts(x.id);
           const plain = parts.find(p => p.contentType === "text/plain");

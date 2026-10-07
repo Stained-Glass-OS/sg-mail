@@ -598,6 +598,30 @@ installTestHook("main", {
     app.mail.list.clickRow(m.id, { shiftKey: !!a.shift, ctrlKey: !!a.ctrl });
     return m.id;
   },
+  // a message chosen as by a click (by subject, or the Nth in the list),
+  // and how long until the reading pane shows it; and its read flag then
+  prefetchLog: () => app.mail.prefetchLog || null,
+  prefetchNow: () => { app.mail.prefetchNewest(); return true; },
+  // how long background fetching still gives way to the last click (ms)
+  busyFor: () => Math.round((window.sgmailBusyUntil || 0) - performance.now()),
+  openTimed: a => new Promise(async (resolve, reject) => {
+    const list = app.mail.list.messages;
+    const m = a.subject ? list.find(x => x.subject === a.subject) : list[a.index || 0];
+    if (!m) return reject(new Error("no message"));
+    const offlineBefore = (await messenger.sgmail.messageState(m.id)).offline;
+    const t0 = performance.now();
+    let readAt = null;
+    const timer = setTimeout(() => reject(new Error("not shown in 60 s")), 60000);
+    app.mail.reader.onShown = async (id, ms) => {
+      if (id !== m.id) return;
+      clearTimeout(timer);
+      app.mail.reader.onShown = null;
+      resolve({ id: m.id, ms: Math.round(performance.now() - t0), readAtClick: readAt, steps: app.mail.reader.lastSteps, offlineBefore,
+        offline: (await messenger.sgmail.messageState(m.id)).offline });
+    };
+    app.mail.list.select(m.id);
+    readAt = m.read;
+  }),
   selectMessage: a => {
     const m = app.mail.list.messages.find(x => x.subject === a.subject);
     if (!m) throw new Error("no message " + a.subject);

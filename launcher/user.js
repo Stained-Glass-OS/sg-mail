@@ -39,3 +39,7 @@ user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
 // the Focused Inbox tells bulk mail by these headers: kept in Thunderbird's
 // message database (and fetched with the headers from IMAP servers)
 user_pref("mailnews.customDBHeaders", "list-unsubscribe list-id precedence auto-submitted feedback-id");
+// Whole messages in one fetch, not 64 KB chunks: each chunk is a request of
+// its own, and through a Microsoft account's DavMail gateway every one costs
+// a round trip to Microsoft (a 800 KB message took 13 of them)
+user_pref("mail.imap.fetch_by_chunks", false);

@@ -596,6 +596,8 @@ function removeDavmailCollections(key, port) {
 
 const SG_MUTANT_DAVMAIL_ITIP = false;
 const SG_MUTANT_DAVMAIL_NO_PROBE = false;
+const SG_MUTANT_DAVMAIL_ALERTS = false;
+let prefetchPausedUntil = 0;
 // An invitation answered on a Microsoft calendar (through DavMail): Exchange
 // has put the meeting in the calendar itself already (tentative), under its
 // own UID -- the meeting's global object ID, which carries the invitation's
@@ -698,6 +700,88 @@ function imapLoginProbe(port, user, password) {
     setTimeout(() => finish("no answer from the gateway"), 60000);
   });
 }
+
+// A mail account through a DavMail gateway: every message not kept here
+// is a round trip to Microsoft (Graph), so new mail is looked for often
+// (IDLE, answered by DavMail every minute, and a check each minute), whole
+// messages are fetched at once (no part-by-part fetching through the
+// gateway), three connections are kept, not five (each one a DavMail
+// session). What is kept on this computer ahead is SG Mail's newest-first
+// prefetch (prefetchNewest: the newest 500 of the last 30 days, small
+// batches that give way to the person's own clicks) -- not Thunderbird's
+// autosync, which held the folder for minutes on a big mailbox (in no
+// useful order) while a click on a message waited behind it.
+function davmailMailPrefs(server) {
+  server.setBoolValue("use_idle", true);
+  server.setBoolValue("check_new_mail", true);
+  server.setIntValue("check_time", 1);
+  // (Thunderbird's "download new messages for offline use" fetched every
+  // message of a first sync, oldest ones included: off; SG Mail's prefetch
+  // keeps what is wanted)
+  server.setBoolValue("offline_download", false);
+  server.setIntValue("autosync_max_age_days", 30);
+  server.setBoolValue("autosync_offline_stores", false);
+  server.setBoolValue("mime_parts_on_demand", false);
+  server.setIntValue("max_cached_connections", 3);
+  server.setBoolValue("login_at_startup", true);
+}
+
+// ---- a DavMail gateway that stops answering: started again, quietly ----------------------
+//
+// Thunderbird's own alerts for a gateway ("connection refused", "timed
+// out" at 127.0.0.1) are taken here instead: the gateway's user service is
+// started again, the person sees "Reconnecting to Microsoft…", and only if
+// that keeps failing (three times in two minutes) does Thunderbird's alert
+// come through.
+const gatewayListeners = new Set();
+const gatewayTrouble = new Map();        // link name -> [times]
+
+function gatewayOfUrl(url) {
+  let host, port;
+  try {
+    host = url.host;
+    port = url.port;
+  } catch (e) {
+    return null;
+  }
+  if (host !== "127.0.0.1" && host !== "localhost") return null;
+  for (const pref of Services.prefs.getChildList(DAVMAIL_PREF)) {
+    const link = davmailLink(pref.slice(DAVMAIL_PREF.length));
+    if (link && !link.sharedOf && [link.imap, link.smtp, link.port, link.ldap].includes(port)) return link;
+  }
+  return null;
+}
+
+async function healGateway(link) {
+  const now = Date.now();
+  const times = (gatewayTrouble.get(link.name) || []).filter(t => now - t < 120000);
+  times.push(now);
+  gatewayTrouble.set(link.name, times);
+  const tell = state => { for (const f of gatewayListeners) f({ email: link.email, state }); };
+  tell("reconnecting");
+  try {
+    await runHelper(["start", link.name], { allowFail: true });
+    const up = await waitForGateway(link.port, 30);
+    tell(up ? "recovered" : "failed");
+  } catch (e) {
+    tell("failed");
+  }
+}
+
+const gatewayAlerts = {
+  QueryInterface: ChromeUtils.generateQI(["nsIMsgUserFeedbackListener"]),
+  onAlert(message, url) {
+    const link = url ? gatewayOfUrl(url) : null;
+    if (!link || SG_MUTANT_DAVMAIL_ALERTS) return false;
+    const recent = (gatewayTrouble.get(link.name) || []).filter(t => Date.now() - t < 120000);
+    if (recent.length >= 3) return false;       // it keeps failing: say so
+    console.warn("sg-mail: the Microsoft gateway did not answer, starting it again:", message);
+    healGateway(link);
+    return true;
+  },
+  onCertError() {},
+};
+let gatewayAlertsOn = false;
 
 // The iTIP state of messages shown in the reading pane: message id -> state
 const itipStates = new Map();
@@ -1091,10 +1175,18 @@ async function sieveFor(accountId, where) {
 this.sgmail = class extends ExtensionCommon.ExtensionAPI {
   onShutdown() {
     itipStates.clear();
+    if (gatewayAlertsOn) {
+      MailServices.mailSession.removeUserFeedbackListener(gatewayAlerts);
+      gatewayAlertsOn = false;
+    }
   }
 
   getAPI(context) {
     const { extension } = context;
+    if (!gatewayAlertsOn) {
+      gatewayAlertsOn = true;
+      MailServices.mailSession.addUserFeedbackListener(gatewayAlerts);
+    }
 
     function msgHdr(messageId) {
       const hdr = extension.messageManager.get(messageId);
@@ -1451,7 +1543,114 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
           return {
             replied: !!(hdr.flags & Ci.nsMsgMessageFlags.Replied),
             forwarded: !!(hdr.flags & Ci.nsMsgMessageFlags.Forwarded),
+            // kept on this computer (shown without asking the server)
+            offline: !!(hdr.flags & Ci.nsMsgMessageFlags.Offline),
           };
+        },
+
+        // the mail accounts SG Mail runs through a DavMail gateway (their own
+        // and shared mailboxes): kept here ahead, newest first
+        async davmailMailAccounts() {
+          const ids = Services.prefs.getChildList(DAVMAIL_PREF).map(p => p.slice(DAVMAIL_PREF.length))
+            .filter(k => { const l = davmailLink(k); return l && (l.mail || l.sharedOf) && MailServices.accounts.getAccount(k); });
+          // (accounts made by an older SG Mail get today's settings)
+          for (const k of ids) {
+            try {
+              davmailMailPrefs(MailServices.accounts.getAccount(k).incomingServer);
+            } catch (e) {
+              console.error("sg-mail: DavMail account settings", e);
+            }
+          }
+          return ids;
+        },
+
+        // Messages fetched to this computer ahead of their opening (the next
+        // and previous ones when one is opened; the newest of a folder after
+        // a sync), in the order given -- newest first. IMAP folders only;
+        // those already kept here are left alone. Returns how many it asked for.
+        async prefetchMessages(ids) {
+          const byFolder = new Map();
+          for (const id of ids || []) {
+            let hdr;
+            try {
+              hdr = msgHdr(id);
+            } catch (e) {
+              continue;
+            }
+            if (!hdr || (hdr.flags & Ci.nsMsgMessageFlags.Offline) || hdr.folder.server.type !== "imap") continue;
+            if (!byFolder.has(hdr.folder)) byFolder.set(hdr.folder, []);
+            byFolder.get(hdr.folder).push(hdr);
+          }
+          let n = 0;
+          for (const [folder, hdrs] of byFolder) {
+            // (a folder busy with another fetch: left for later, quietly --
+            // no window to tell: background work raises no dialogs)
+            if (folder.locked) continue;
+            try {
+              folder.downloadMessagesForOffline(hdrs, null);
+              n += hdrs.length;
+            } catch (e) {
+              console.error("sg-mail: prefetch", e);
+            }
+          }
+          return n;
+        },
+
+        // A folder's newest messages fetched to this computer, newest first,
+        // a batch at a time: up to LIMIT messages, none older than DAYS days
+        // (Microsoft accounts through DavMail: every message shown is
+        // otherwise a round trip to Microsoft). Returns what it queued.
+        // the person is reading: background fetching waits (MS) -- one
+        // folder connection, and a click must not queue behind a prefetch
+        async pausePrefetch(ms) {
+          prefetchPausedUntil = Math.max(prefetchPausedUntil, Date.now() + Math.min(ms || 0, 30000));
+          return true;
+        },
+
+        async prefetchNewest(folderId, limit = 500, days = 30, batch = 25) {
+          const folder = folderOf(folderId);
+          if (folder.server.type !== "imap") return { queued: 0, order: [] };
+          const since = Date.now() - days * 86400000;
+          const hdrs = [];
+          for (const h of folder.msgDatabase.enumerateMessages()) {
+            if (h.flags & Ci.nsMsgMessageFlags.Offline) continue;
+            if (h.date / 1000 < since) continue;
+            hdrs.push(h);
+          }
+          hdrs.sort((a, b) => b.date - a.date);
+          const chosen = hdrs.slice(0, limit);
+          for (let i = 0; i < chosen.length; i += batch) {
+            const part = chosen.slice(i, i + batch);
+            await new Promise(resolve => {
+              const listener = {
+                QueryInterface: ChromeUtils.generateQI(["nsIUrlListener"]),
+                OnStartRunningUrl() {},
+                OnStopRunningUrl() {
+                  resolve();
+                },
+              };
+              const t0 = Date.now();
+              const start = () => {
+                // a folder busy with another fetch, or the person reading
+                // (a click a moment ago): this batch waits its turn
+                if ((folder.locked || Date.now() < prefetchPausedUntil) && Date.now() - t0 < 60000) return setTimeout(start, 300);
+                try {
+                  folder.downloadMessagesForOffline(part, null);
+                } catch (e) {
+                  console.error("sg-mail: prefetch", e);
+                }
+                poll();
+              };
+              // downloadMessagesForOffline has no listener: wait until the
+              // batch is here (or a while), then the next
+              const poll = () => {
+                if (part.every(h => h.flags & Ci.nsMsgMessageFlags.Offline) || Date.now() - t0 > 60000) return listener.OnStopRunningUrl();
+                setTimeout(poll, 300);
+              };
+              start();
+            });
+          }
+          return { queued: chosen.length, order: chosen.slice(0, 10).map(h => h.date / 1000) };
         },
 
         // what the message list shows beside the headers: the first words of
@@ -1771,7 +1970,7 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
           server.socketType = Ci.nsMsgSocketType.plain;
           server.authMethod = Ci.nsMsgAuthMethod.passwordCleartext;
           server.prettyName = email;
-          server.setBoolValue("use_idle", true);
+          davmailMailPrefs(server);
           const outServer = MailServices.outgoingServer.createServer("smtp");
           const smtp = outServer.QueryInterface(Ci.nsISmtpServer);
           smtp.hostname = "127.0.0.1";
@@ -2519,7 +2718,7 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
           server.socketType = Ci.nsMsgSocketType.plain;
           server.authMethod = Ci.nsMsgAuthMethod.passwordCleartext;
           server.prettyName = mailbox;
-          server.setBoolValue("use_idle", true);
+          davmailMailPrefs(server);
           const identity = MailServices.accounts.createIdentity();
           identity.email = mailbox;
           identity.fullName = mailbox;
@@ -2632,6 +2831,18 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
               lazy.cal.manager.removeCalendarObserver(observer);
               lazy.cal.manager.removeObserver(managerObserver);
             };
+          },
+        }).api(),
+
+        // a Microsoft account's gateway being started again: reconnecting,
+        // recovered, failed
+        onGatewayTrouble: new ExtensionCommon.EventManager({
+          context,
+          name: "sgmail.onGatewayTrouble",
+          register: fire => {
+            const f = info => fire.async(info);
+            gatewayListeners.add(f);
+            return () => gatewayListeners.delete(f);
           },
         }).api(),
 

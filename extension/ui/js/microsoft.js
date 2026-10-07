@@ -32,6 +32,17 @@ export class MicrosoftCalendars {
 
   async start() {
     await this.refresh();
+    // a gateway started again (Thunderbird found it not answering): a word
+    // in the status bar, not a dialog
+    messenger.sgmail.onGatewayTrouble?.addListener(info => {
+      this.gatewayState = info;
+      if (info.state === "reconnecting") this.app.setRightStatus("Reconnecting to Microsoft…");
+      else if (info.state === "recovered") {
+        this.app.setRightStatus("Connected");
+        this.refresh();
+      } else this.refresh();
+      this.dumpTrouble = (this.dumpTrouble || []).concat(info.state).slice(-20);
+    });
     // an account added: offer its calendar and contacts
     messenger.accounts.onCreated?.addListener((id, account) => this.onAccountCreated(id || account?.id));
     // and again now and then: an expired sign-in shows without a restart
@@ -300,6 +311,7 @@ export class MicrosoftCalendars {
       accounts: this.accounts.map(a => ({ accountId: a.accountId, email: a.email, kind: a.kind, linked: a.linked })),
       status: this.status.map(s => ({ accountId: s.accountId, email: s.email, state: s.state, detail: s.detail || "", port: s.port })),
       busy: [...this.busy],
+      trouble: this.dumpTrouble || [],
     };
   }
 }

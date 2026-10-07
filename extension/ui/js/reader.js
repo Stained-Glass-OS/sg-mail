@@ -66,42 +66,32 @@ export class ReadingPane {
     clearTimeout(this.readTimer);
     this.message = msg;
     const token = (this.token = Symbol("show"));
+    this.shownAt = performance.now();
+    // read as soon as it is chosen (Outlook's "when the selection changes"):
+    // the flag here at once, the server's in the background
+    if (!msg.read && !(this.actions.readDelay > 0)) this.actions.markRead([msg], true);
+    // background fetching (previews, prefetch) gives way for a moment: the
+    // folder has one connection, and this message is the one wanted now
+    window.sgmailBusyUntil = performance.now() + 4000;
+    messenger.sgmail.pausePrefetch?.(4000).catch(() => {});
+    // the ones beside it fetched ahead (arrow keys through the list)
+    this.actions.prefetchAround?.(msg);
+    const steps = (this.lastSteps = {});
+    const mark = k => (steps[k] = Math.round(performance.now() - this.shownAt));
     let full;
     try {
       full = await messenger.messages.getFull(msg.id);
+      mark("full");
     } catch (e) {
       if (this.token !== token) return;
       this.el.replaceChildren(h("div", { class: "rp-empty", html: `<p>This message could not be opened.</p><p style="font-size:12px">${esc(e.message)}</p>` }));
       return;
     }
     if (this.token !== token) return;
-    let attachments = [];
-    try {
-      attachments = await messenger.messages.listAttachments(msg.id);
-    } catch (e) {
-      // none
-    }
     const body = bodyOf(full);
-    // the pictures the HTML shows from inside the message (cid:)
-    const cid = new Map();
-    const parts = [];
-    walk(full, p => parts.push(p));
-    for (const p of parts) {
-      const id = header(p, "content-id").replace(/^<|>$/g, "").toLowerCase();
-      if (!id || !body.html || !body.html.toLowerCase().includes("cid:" + id)) continue;
-      try {
-        const file = await messenger.messages.getAttachmentFile(msg.id, p.partName);
-        cid.set(id, await blobToDataUrl(file));
-      } catch (e) {
-        // not there
-      }
-    }
-    if (this.token !== token) return;
-    const shownAttachments = attachments.filter(a => {
-      const id = (a.contentId || "").replace(/^<|>$/g, "").toLowerCase();
-      return !(id && cid.has(id)) && !/^text\/calendar/i.test(a.contentType || "");
-    });
     const sender = parseAddress(msg.author);
+    // the attachments listed alongside (not waited for: the text first)
+    const listing = messenger.messages.listAttachments(msg.id).catch(() => []);
     let allowRemote = false;
     try {
       allowRemote = await messenger.sgmail.remoteContentAllowed(sender.email);
@@ -110,10 +100,41 @@ export class ReadingPane {
     }
     // something else chosen meanwhile (another message, many of them)
     if (this.token !== token) return;
-    this.state = { id: msg.id, body, cid, attachments: shownAttachments, allowRemote, sender, full };
+    // the text at once ...
+    this.state = { id: msg.id, body, cid: new Map(), attachments: [], allowRemote, sender, full };
     this.render();
-    // read once shown for a moment, as Outlook's "mark as read when viewed"
-    if (!msg.read) {
+    mark("render");
+    this.lastShowMs = performance.now() - this.shownAt;
+    this.onShown?.(msg.id, this.lastShowMs);
+    // ... then the pictures from inside the message (cid:), all at once, and
+    // the attachments: drawn again when they are there
+    const parts = [];
+    walk(full, p => parts.push(p));
+    const cid = new Map();
+    await Promise.all(parts.map(async p => {
+      const id = header(p, "content-id").replace(/^<|>$/g, "").toLowerCase();
+      if (!id || !body.html || !body.html.toLowerCase().includes("cid:" + id)) return;
+      try {
+        const file = await messenger.messages.getAttachmentFile(msg.id, p.partName);
+        cid.set(id, await blobToDataUrl(file));
+      } catch (e) {
+        // not there
+      }
+    }));
+    const attachments = await listing;
+    mark("complete");
+    if (this.token !== token) return;
+    const shownAttachments = attachments.filter(a => {
+      const id = (a.contentId || "").replace(/^<|>$/g, "").toLowerCase();
+      return !(id && cid.has(id)) && !/^text\/calendar/i.test(a.contentType || "");
+    });
+    if (cid.size || shownAttachments.length) {
+      this.state = Object.assign({}, this.state, { cid, attachments: shownAttachments });
+      this.render();
+    }
+    this.onComplete?.(msg.id);
+    // (a delay set: read once shown for that long)
+    if (!msg.read && this.actions.readDelay > 0) {
       this.readTimer = setTimeout(() => {
         if (this.message && this.message.id === msg.id) this.actions.markRead([msg], true);
       }, this.actions.readDelay ?? 1000);
@@ -145,9 +166,10 @@ export class ReadingPane {
       list.append(card.el);
     }
     this.el.replaceChildren(head, list);
-    // the unread ones read once shown for a moment
+    // the unread ones open are read at once (or after the delay set)
     const unread = items.filter(it => !it.msg.read && open.has(it.msg.id)).map(it => it.msg);
-    if (unread.length) {
+    if (unread.length && !(this.actions.readDelay > 0)) this.actions.markRead(unread, true);
+    else if (unread.length) {
       this.readTimer = setTimeout(() => {
         if (this.token === token) this.actions.markRead(unread, true);
       }, this.actions.readDelay ?? 1000);

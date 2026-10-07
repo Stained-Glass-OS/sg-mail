@@ -1,3 +1,37 @@
+sg-mail (0.1.0-12) unstable; urgency=medium
+
+  * Reading mail is quick, above all on Microsoft accounts through DavMail
+    (David: slow previews, oldest mail fetched first, "127.0.0.1 not
+    reachable" on a big Inbox). Measured with the real test account (QA VM):
+    - A click shows the text at once and fills in pictures from inside the
+      message and the attachments after: a message kept here in 10-200 ms
+      (it was 0.5-2.3 s: waited for every inline picture first).
+    - Read on the click itself (Outlook's "when the selection changes"); the
+      server's \Seen follows in the background (the read delay setting
+      still applies when set).
+    - The messages beside one opened are fetched ahead (arrow keys).
+    - DavMail accounts: Thunderbird's own autosync and "download for
+      offline" are off (they held the folder for minutes, oldest included,
+      while a click waited: 3-11 s, some 60 s timeouts); SG Mail fetches
+      the newest 500 of the last 30 days of Inbox and Sent Items, newest
+      first, in batches of five that give way to the person's clicks
+      (previews too: a little at a time); a new account's newest mail is
+      ready within a minute. Whole messages (no part-by-part fetching),
+      IDLE and a check each minute (new mail in ~15 s), three connections.
+      Thunderbird no longer fetches in 64 KB chunks (mail.imap.fetch_by_
+      chunks: through DavMail each chunk was a round trip to Microsoft).
+    - Uncached messages through DavMail: 0.15-1.4 s (Microsoft's own time).
+  * The gateway heals itself: Thunderbird's "connection refused / timed out
+    at 127.0.0.1" for a gateway is taken by SG Mail, which starts the user
+    service again ("Reconnecting to Microsoft…" in the status bar, no
+    dialog; Thunderbird's own alert only after three failures in two
+    minutes). DavMail runs with -Xmx1g and exits on OutOfMemoryError; the
+    unit restarts it always (2 s, at most 20 times in 5 minutes).
+  * Gate: davmail-perf (new; 7 mutants), on Thunderbird 140 and 157;
+    launcher gate: whole-message fetches.
+
+ -- Stained Glass OS <dev@stained-glass.example>  Wed, 07 Oct 2026 03:00:00 +0000
+
 sg-mail (0.1.0-11) unstable; urgency=medium
 
   * Ctrl+A in the message list selects every message of the view (also in

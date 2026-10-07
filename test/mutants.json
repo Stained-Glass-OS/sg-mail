@@ -11,8 +11,8 @@
   "name": "mail-read-remote",
   "gate": "mail-read-gate.py",
   "file": "ui/js/reader.js",
-  "find": "this.state = { id: msg.id, body, cid, attachments: shownAttachments, allowRemote, sender, full };",
-  "replace": "this.state = { id: msg.id, body, cid, attachments: shownAttachments, allowRemote: true, sender, full };",
+  "find": "this.state = { id: msg.id, body, cid: new Map(), attachments: [], allowRemote, sender, full };",
+  "replace": "this.state = { id: msg.id, body, cid: new Map(), attachments: [], allowRemote: true, sender, full };",
   "why": "remote pictures loading at once"
  },
  {
@@ -1110,5 +1110,61 @@
   "find": "    return this.app.calendar.newEvent({ meeting: true, attendees: people.join(\"; \"), title: baseSubject(m.subject) });",
   "replace": "    return this.app.calendar.newEvent({ meeting: true });",
   "why": "Meeting without the message's people"
+ },
+ {
+  "name": "davmail-perf-autosync",
+  "gate": "davmail-perf-gate.py",
+  "file": "experiments/parent.js",
+  "find": "  server.setBoolValue(\"autosync_offline_stores\", false);",
+  "replace": "  server.setBoolValue(\"autosync_offline_stores\", true);",
+  "why": "Thunderbird's autosync holding the folder while a click waits"
+ },
+ {
+  "name": "davmail-perf-oldest-first",
+  "gate": "davmail-perf-gate.py",
+  "file": "experiments/parent.js",
+  "find": "          hdrs.sort((a, b) => b.date - a.date);",
+  "replace": "          hdrs.sort((a, b) => a.date - b.date);",
+  "why": "the oldest fetched first"
+ },
+ {
+  "name": "davmail-perf-no-age",
+  "gate": "davmail-perf-gate.py",
+  "file": "experiments/parent.js",
+  "find": "            if (h.date / 1000 < since) continue;",
+  "replace": "",
+  "why": "everything fetched ahead, however old"
+ },
+ {
+  "name": "davmail-perf-read-late",
+  "gate": "davmail-perf-gate.py",
+  "file": "ui/js/reader.js",
+  "find": "    if (!msg.read && !(this.actions.readDelay > 0)) this.actions.markRead([msg], true);",
+  "replace": "",
+  "why": "read only once shown for a while (or never)"
+ },
+ {
+  "name": "davmail-perf-no-neighbors",
+  "gate": "davmail-perf-gate.py",
+  "file": "ui/js/mail.js",
+  "find": "    if (ids.length) messenger.sgmail.prefetchMessages(ids).catch(() => {});",
+  "replace": "",
+  "why": "the next message not fetched ahead"
+ },
+ {
+  "name": "davmail-perf-alerts",
+  "gate": "davmail-perf-gate.py",
+  "file": "experiments/parent.js",
+  "find": "const SG_MUTANT_DAVMAIL_ALERTS = false;",
+  "replace": "const SG_MUTANT_DAVMAIL_ALERTS = true;",
+  "why": "Thunderbird's 127.0.0.1 dialog, and no restart of the gateway"
+ },
+ {
+  "name": "davmail-perf-no-yield",
+  "gate": "davmail-perf-gate.py",
+  "file": "ui/js/reader.js",
+  "find": "    window.sgmailBusyUntil = performance.now() + 4000;",
+  "replace": "",
+  "why": "previews and prefetch keep the folder busy while a click waits"
  }
 ]
