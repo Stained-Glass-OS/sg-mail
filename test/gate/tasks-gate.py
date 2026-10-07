@@ -86,7 +86,7 @@ try:
     env.append("INBOX", message("Pradeep Gupta <pradeep@example.test>", ALICE, "Invoice 77", text="Please pay by Friday."), flagged=True)
     env.append("INBOX", message("Lee Gu <lee@example.test>", ALICE, "Slides for Monday", text="Can you review them?"))
     env.make_profile()
-    env.start_thunderbird()
+    env.start_thunderbird(hold_calendar=True)
     env.caldav_id = env.add_caldav_calendar()
     env.wait_ui("mail", lambda r: len([x for x in r["list"] if "id" in x]) >= 1, timeout=90)
 

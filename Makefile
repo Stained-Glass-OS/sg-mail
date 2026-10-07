@@ -6,6 +6,7 @@
 #   make lint           syntax, manifests, desktop entry, AppStream, trademarks
 #   make test           lint + every gate (test/gate/*.py) in the test root
 #   make test-mutation  each gate against its mutants: it must fail
+#   tools/gen-icons.py  the hicolor PNGs (data/icons) from data/sg-mail.svg
 #   make deb            the package sg-mail       -> ../sg-mail_*_all.deb
 #   make root           the test root (Debian trixie: Thunderbird, Xvfb,
 #                       Dovecot, Radicale, aiosmtpd), made once, rootless
@@ -91,10 +92,12 @@ stage: xpi
 # the gates run the extension packed, as the package installs it
 test: lint xpi root stage
 	@sh test/launcher-gate.sh
+	@sh test/icons-gate.sh
 	@rc=0; for g in $(GATES); do echo "== $$g"; SG_MAIL_EXTENSION=xpi $(INROOT) $(PY) -u $$g || rc=1; done; exit $$rc
 
 test-mutation: xpi root stage
 	@sh test/launcher-gate.sh --mutants
+	@sh test/icons-gate.sh --mutants
 	@SG_ROOT=$(ROOT) SG_STAGE=$(STAGE) $(PY) test/mutate.py $(GATES)
 
 deb:

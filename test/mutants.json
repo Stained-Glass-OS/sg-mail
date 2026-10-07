@@ -168,6 +168,14 @@
   "why": "Delete not deleting"
  },
  {
+  "name": "calendar-start-race",
+  "gate": "calendar-gate.py",
+  "file": "ui/js/calendar.js",
+  "find": "    await messenger.sgmail.testHold(\"calendar\").catch(() => {});\n",
+  "replace": "",
+  "why": "the calendar starts (and adds a local Calendar) before the gate's CalDAV calendar is there"
+ },
+ {
   "name": "invite-bar",
   "gate": "invite-gate.py",
   "file": "ui/js/reader.js",

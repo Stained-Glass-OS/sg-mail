@@ -37,6 +37,8 @@ export class CalendarModule {
     this.hidden = new Set(st.calHidden || []);
     messenger.sgmail.onCalendarChanged.addListener(() => this.loadCalendars().then(() => this.refreshSoon()));
     messenger.sgmail.onAlarm.addListener(ev => this.onAlarm(ev));
+    // under a gate: after the gate's own calendar is registered (testHold)
+    await messenger.sgmail.testHold("calendar").catch(() => {});
     try {
       await messenger.sgmail.ensureCalendar();
     } catch (e) {

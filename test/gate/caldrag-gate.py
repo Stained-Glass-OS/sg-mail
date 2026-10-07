@@ -112,7 +112,7 @@ try:
         st, _ = env.dav("PUT", f"/alice@example.test/work/{k}.ics", v, headers={"Content-Type": "text/calendar"})
         assert st in (201, 204), st
     env.make_profile()
-    env.start_thunderbird()
+    env.start_thunderbird(hold_calendar=True)
     env.caldav_id = env.add_caldav_calendar()
     env.wait_ui("ping", lambda r: r["ready"], timeout=60)
     env.ui("click", selector="#nav-calendar")

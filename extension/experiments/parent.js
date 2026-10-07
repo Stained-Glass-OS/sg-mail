@@ -2882,6 +2882,28 @@ this.sgmail = class extends ExtensionCommon.ExtensionAPI {
           },
         }).api(),
 
+        // the gates' start-up order (SG_MAIL_TEST_HOLD=calendar,...): a step
+        // named there waits until the gate says go (pref sgmail.test.go.NAME,
+        // then the sgmail-test-go notice) -- the calendar's "a local Calendar
+        // when there is none" must not run before the gate has registered its
+        // CalDAV calendar. Outside the gates it returns at once.
+        async testHold(name) {
+          if (!Services.env.get("SG_MAIL_TEST_OUT")) return false;
+          if (!(Services.env.get("SG_MAIL_TEST_HOLD") || "").split(",").includes(name)) return false;
+          const pref = "sgmail.test.go." + name;
+          if (Services.prefs.getBoolPref(pref, false)) return true;
+          await new Promise(resolve => {
+            const obs = () => {
+              if (!Services.prefs.getBoolPref(pref, false)) return;
+              Services.obs.removeObserver(obs, "sgmail-test-go");
+              resolve();
+            };
+            Services.obs.addObserver(obs, "sgmail-test-go");
+            obs();
+          });
+          return true;
+        },
+
         async testReply(id, reply) {
           if (!Services.env.get("SG_MAIL_TEST_OUT")) return false;
           Services.obs.notifyObservers(null, "sgmail-test-reply", JSON.stringify(Object.assign({ id }, reply)));

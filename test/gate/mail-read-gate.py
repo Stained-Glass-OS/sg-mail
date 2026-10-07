@@ -17,12 +17,19 @@ import sys
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
-from harness import Env, Gate, message, HTTP_PORT  # noqa: E402
+from harness import Env, Gate, message, midday_tz, HTTP_PORT  # noqa: E402
 
 DAY = 86400
 now = time.time()
 g = Gate("mail-read")
-env = Env("mail-read")
+# Thunderbird's clock in a zone where it is about noon now: "an hour ago" is
+# today and "a day and an hour ago" yesterday at any hour the gate runs (in
+# UTC, from midnight to 1 a.m. UTC both fell a day earlier and the date-group
+# check failed -- the grouping itself, util.js dateGroup, is local-day right)
+TZ, TZ_OFF = midday_tz()
+TZ = os.environ.get("SG_MAIL_GATE_TZ", TZ)  # a zone of your choice (the failure: one just past midnight)
+print(f"      Thunderbird's time zone: {TZ} (local hour ~{(time.gmtime().tm_hour + TZ_OFF) % 24})")
+env = Env("mail-read", tz=TZ)
 try:
     env.start_servers()
     tracker = f"http://127.0.0.1:{HTTP_PORT}/img/tracker.png"

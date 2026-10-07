@@ -60,7 +60,7 @@ try:
     env.append("INBOX", message("Bob Builder <bob@example.test>", "Alice Example <alice@example.test>", "Invitation: Late call",
                                 text="A late call.", calendar=(request("late-1@example.test", "Late call", "20261021T200000Z", "20261021T210000Z"), "REQUEST")))
     env.make_profile()
-    env.start_thunderbird()
+    env.start_thunderbird(hold_calendar=True)
     env.caldav_id = env.add_caldav_calendar()
     env.wait_ui("mail", lambda r: len([x for x in r["list"] if "id" in x]) >= 2, timeout=90)
     env.ui("click", selector="#nav-calendar")

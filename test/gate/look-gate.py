@@ -198,7 +198,7 @@ try:
     seed(env)
     calendar_events(env)
     env.make_profile()
-    env.start_thunderbird()
+    env.start_thunderbird(hold_calendar=True)
     env.caldav_id = env.add_caldav_calendar()
     env.wait_ui("ping", lambda r: r["ready"], timeout=60)
     chrome = env.chrome("""
@@ -435,7 +435,7 @@ try:
     seed(env)
     calendar_events(env)
     env.make_profile()
-    env.start_thunderbird()
+    env.start_thunderbird(hold_calendar=True)
     env.caldav_id = env.add_caldav_calendar()
     bg = shots(env, "dark")
     g.check(lum(bg) < 60, "dark: a dark window when the system is dark", bg)

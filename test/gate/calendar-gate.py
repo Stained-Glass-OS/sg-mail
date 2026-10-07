@@ -87,7 +87,7 @@ try:
     st, _ = env.dav("PUT", "/alice@example.test/work/dentist-1.ics", DENTIST, headers={"Content-Type": "text/calendar"})
     g.check(st in (201, 204), "(the server has Alice's Dentist appointment)", st)
     env.make_profile()
-    env.start_thunderbird()
+    env.start_thunderbird(hold_calendar=True)
     env.caldav_id = env.add_caldav_calendar()
     env.wait_ui("ping", lambda r: r["ready"], timeout=60)
 

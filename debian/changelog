@@ -1,3 +1,33 @@
+sg-mail (0.1.0-13) unstable; urgency=medium
+
+  * Linux icons at every size desktops ask for: 22, 96 and 512 px added
+    beside 16-256, all (re)made from the vector icon (data/sg-mail.svg) by
+    tools/gen-icons.py -- rendered large, reduced straight to each size,
+    the smallest lightly sharpened, as sg-shell's sgicon does -- and
+    installed in hicolor. Gate test/icons-gate.sh (installed sizes, each
+    committed PNG what the vector source makes today); mutant
+    SG_MUTANT_ICON_SIZES (the old seven sizes) fails it.
+  * Gates deterministic:
+    - mail-read's date groups failed from midnight to about 00:30 (local
+      time = the gate's UTC): "an hour ago" was yesterday. The grouping
+      (util.js dateGroup, by local calendar day) is right; the gate now
+      runs Thunderbird in a fixed-offset zone where it is about noon
+      (harness midday_tz, Env(tz=)), reproduced first with
+      SG_MAIL_GATE_TZ=America/St_Johns at 00:21 local (FAIL), PASS after.
+    - The calendar's start-up raced the gate on Thunderbird 140: SG Mail's
+      window, up before Marionette, ran "a local Calendar when there is
+      none" before the gate registered its CalDAV calendar, so a stray
+      "Calendar" appeared beside "Work" now and then (reproduced every time
+      with the registration 8 s late). Under a gate
+      (SG_MAIL_TEST_OUT and SG_MAIL_TEST_HOLD=calendar) the calendar's
+      start now waits for the gate's go (experiment testHold; outside the
+      gates it returns at once); start_thunderbird(hold_calendar=True) in
+      the calendar, caldrag, invite, tasks, scheduling and look gates. The
+      registration now waits 4 s first, so a missing hold loses every time:
+      mutant calendar-start-race is killed.
+
+ -- Stained Glass OS <ke7oxh@gmail.com>  Tue, 06 Oct 2026 20:09:22 -0700
+
 sg-mail (0.1.0-12) unstable; urgency=medium
 
   * Reading mail is quick, above all on Microsoft accounts through DavMail

@@ -94,7 +94,8 @@ def make_http(root, hits, extra):
 
 
 class Env:
-    def __init__(self, name, dark=False, extra_prefs=None, with_caldav=True, accounts=("alice@example.test",), keep=False, sieve=False, radicale_rights=None):
+    def __init__(self, name, dark=False, extra_prefs=None, with_caldav=True, accounts=("alice@example.test",), keep=False, sieve=False, radicale_rights=None, tz="UTC"):
+        self.tz = tz
         self.name = name
         # SG_GATE_TAG: runs of one gate side by side (the mutants) keep apart
         tag = os.environ.get("SG_GATE_TAG", "")
@@ -539,13 +540,19 @@ postmaster_address = postmaster@example.test
         self.profile = prof
         return prof
 
-    def start_thunderbird(self, mutant_env=None, seed=False):
+    def start_thunderbird(self, mutant_env=None, seed=False, hold_calendar=False):
+        """hold_calendar: SG Mail's calendar start-up (and its "a local
+        Calendar when there is none") waits for add_caldav_calendar -- else
+        the window, up before Marionette on Thunderbird 140, made a local
+        Calendar beside the gate's CalDAV one now and then."""
         self.xvfb = subprocess.Popen(["Xvfb", ":91", "-screen", "0", "1600x1000x24", "-nolisten", "tcp"], stderr=subprocess.DEVNULL)
         time.sleep(0.8)
         self.procs.append(self.xvfb)
-        env = dict(self.user_env(), DISPLAY=":91", SG_MAIL_TEST_OUT=self.out, MOZ_CRASHREPORTER_DISABLE="1", TZ="UTC", LANG="C.UTF-8")
+        env = dict(self.user_env(), DISPLAY=":91", SG_MAIL_TEST_OUT=self.out, MOZ_CRASHREPORTER_DISABLE="1", TZ=self.tz, LANG="C.UTF-8")
         os.makedirs(env["XDG_RUNTIME_DIR"], mode=0o700, exist_ok=True)
         os.makedirs(env["HOME"], exist_ok=True)
+        if hold_calendar:
+            env["SG_MAIL_TEST_HOLD"] = "calendar"
         env.update(mutant_env or {})
         self.tb = subprocess.Popen(["thunderbird"] + (os.environ.get("SG_TB_ARGS", "--name sg-mail --class SG-Mail").split()) + ["--marionette", "-remote-allow-system-access",
                                     "--profile", self.profile, "--no-remote"], env=env,
@@ -568,6 +575,11 @@ postmaster_address = postmaster@example.test
     def add_caldav_calendar(self, name="Work", path="/alice@example.test/work/", color="#0f6cbd", identity="id1"):
         """Alice's CalDAV calendar, registered once her password is known
         (registered in prefs at start it would ask for it first)."""
+        # a few seconds first, so that a calendar start-up not held for this
+        # (start_thunderbird(hold_calendar=True)) loses the race every time
+        # rather than now and then: the calendar gate's no-local-Calendar
+        # check and the mutant calendar-start-race see it
+        time.sleep(float(os.environ.get("SG_MAIL_GATE_CALDAV_DELAY", "4")))
         return self.m.js("""
           const { cal } = ChromeUtils.importESModule("resource:///modules/calendar/calUtils.sys.mjs");
           const c = cal.manager.createCalendar("caldav", Services.io.newURI(args.uri));
@@ -577,12 +589,14 @@ postmaster_address = postmaster@example.test
           c.setProperty("imip.identity.key", args.identity);
           c.setProperty("cache.enabled", true);
           cal.manager.registerCalendar(c);
+          Services.prefs.setBoolPref("sgmail.test.go.calendar", true);
+          Services.obs.notifyObservers(null, "sgmail-test-go", "calendar");
           return c.id;""", {"uri": f"http://127.0.0.1:{CALDAV_PORT}{path}", "name": name, "color": color, "identity": identity})
 
     def start(self, mutant_env=None):
         self.start_servers()
         self.make_profile()
-        self.start_thunderbird(mutant_env)
+        self.start_thunderbird(mutant_env, hold_calendar=bool(self.with_caldav and self.accounts))
         if self.with_caldav and self.accounts:
             self.caldav_id = self.add_caldav_calendar()
         return self
@@ -671,6 +685,21 @@ postmaster_address = postmaster@example.test
                     p.kill()
                 except Exception:
                     pass
+
+
+def midday_tz(local_hour=None):
+    """A fixed-offset time zone (IANA Etc/GMT-N) in which it is now about
+    local_hour (default noon, or $SG_MAIL_GATE_LOCAL_HOUR) o'clock, for gates
+    whose checks depend on the calendar day: "an hour ago" and "a day and an
+    hour ago" are then today and yesterday whenever the gate runs. In UTC they
+    were not, from midnight to 1 a.m. UTC (the mail-read gate failed then).
+    Returns the zone name and its offset from UTC in hours."""
+    if local_hour is None:
+        local_hour = float(os.environ.get("SG_MAIL_GATE_LOCAL_HOUR", "12"))
+    t = time.gmtime()
+    off = round(local_hour - (t.tm_hour + t.tm_min / 60))
+    off = (off + 11) % 24 - 11          # -11 .. +12: Etc/GMT+11 .. Etc/GMT-12
+    return ("UTC" if off == 0 else f"Etc/GMT{-off:+d}"), off
 
 
 def message(frm, to, subject, text=None, html=None, date=None, msgid=None, attachments=(), extra_headers=(), cc=None, calendar=None):

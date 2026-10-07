@@ -78,7 +78,7 @@ try:
     env.put_event("bob@example.test", "/bob@example.test/calendar/", "bob-2", "Bob free time", at(14), at(15), transp="TRANSPARENT")
     env.put_event("alice@example.test", "/alice@example.test/work/", "alice-1", "Dentist", at(13), at(14))
     env.make_profile()
-    env.start_thunderbird()
+    env.start_thunderbird(hold_calendar=True)
     env.caldav_id = env.add_caldav_calendar()
     env.wait_ui("ping", lambda r: r["ready"], timeout=90)
     # Carol's calendar server: free/busy as a CalDAV scheduling server gives it

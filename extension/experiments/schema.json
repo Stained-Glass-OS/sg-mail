@@ -369,6 +369,17 @@
     ]
    },
    {
+    "name": "testHold",
+    "type": "function",
+    "async": true,
+    "parameters": [
+     {
+      "name": "name",
+      "type": "string"
+     }
+    ]
+   },
+   {
     "name": "testReply",
     "type": "function",
     "async": true,
