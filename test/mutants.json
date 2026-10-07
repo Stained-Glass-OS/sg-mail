@@ -696,14 +696,6 @@
   "why": "Open Shared Calendar looking in one's own calendar home"
  },
  {
-  "name": "sched-read-only",
-  "gate": "scheduling-gate.py",
-  "file": "experiments/parent.js",
-  "find": "          if (!info.writable) c.readOnly = true;",
-  "replace": "",
-  "why": "a calendar shared for reading opened as writable"
- },
- {
   "name": "sched-own-busy",
   "gate": "scheduling-gate.py",
   "file": "experiments/parent.js",

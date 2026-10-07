@@ -425,6 +425,17 @@ try:
     st = env.chrome("""const tm = Services.wm.getMostRecentWindow("mail:3pane").document.getElementById("tabmail");
       return tm.currentTabInfo.browser?.currentURI.spec || tm.currentTabInfo.mode.name;""")
     g.check("/ui/main.html" in st, "closing it comes back to SG Mail, not Thunderbird's own view", st)
+    # Thunderbird's own mail view brought to the front some other way (a new
+    # mail notification, a tab closing next to it): SG Mail's view comes back
+    # (Thunderbird 157 goes back to the opener when a tool tab closes, so the
+    # case above alone no longer reaches it)
+    st = env.chrome("""const w = Services.wm.getMostRecentWindow("mail:3pane"), tm = w.document.getElementById("tabmail");
+      const own = tm.tabInfo.find(t => t.mode && t.mode.name == "mail3PaneTab");
+      if (!own) return "no mail3PaneTab";
+      tm.switchToTab(own);
+      for (let i = 0; i < 25 && tm.currentTabInfo === own; i++) await new Promise(r => w.setTimeout(r, 200));
+      return tm.currentTabInfo.browser?.currentURI.spec || tm.currentTabInfo.mode.name;""")
+    g.check("/ui/main.html" in st, "Thunderbird's own mail view brought up: SG Mail's comes back in front", st)
 finally:
     env.stop()
 

@@ -1,3 +1,16 @@
+sg-mail (0.1.0-14) unstable; urgency=medium
+
+  * Tests: the three mutants that survived a mutation run on Thunderbird 157
+    are caught or retired. Quick Steps: a step listing its move first (it
+    must still run last); the look: Thunderbird's own mail view brought up
+    another way returns to SG Mail's (157 returns to the opener when a tool
+    tab closes, so that case no longer reached it); sched-read-only retired
+    as equivalent (Thunderbird 157 sets a shared calendar read-only itself
+    from the same privilege report SG Mail reads; the line stays for
+    servers that report none).
+
+ -- Stained Glass OS <ke7oxh@gmail.com>  Wed, 07 Oct 2026 12:50:37 -0700
+
 sg-mail (0.1.0-13) unstable; urgency=medium
 
   * Linux icons at every size desktops ask for: 22, 96 and 512 px added

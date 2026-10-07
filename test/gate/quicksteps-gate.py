@@ -155,13 +155,20 @@ try:
     env.ui("click", selector="#rb-qs-create")
     env.wait_ui("count", lambda n: n == 1, selector=".modal #qs-name", timeout=10)
     env.ui("type", selector=".modal #qs-name", value="Important and flagged")
+    # the move first, as a person may list it: it must still run last, or the
+    # message is gone before it is categorized and flagged
     types = env.ui("text", selector=".modal .qs-type option")
-    env.ui("selectOption", selector=".modal .qs-type", index=types.index("Categorize message"))
+    env.ui("selectOption", selector=".modal .qs-type", index=types.index("Move to folder"))
+    folders = env.ui("text", selector=".modal .qs-folder option")
+    env.ui("selectOption", selector=".modal .qs-folder", index=next(i for i, t in enumerate(folders) if t.startswith("Projects")))
+    env.ui("click", selector=".modal #qs-add")
+    types = env.ui("text", selector=".modal .qs-action:nth-child(2) .qs-type option")
+    env.ui("selectOption", selector=".modal .qs-type", index=types.index("Categorize message"), nth=1)
     tags = env.ui("text", selector=".modal .qs-tag option")
     env.ui("selectOption", selector=".modal .qs-tag", index=tags.index("Important"))
     env.ui("click", selector=".modal #qs-add")
-    types = env.ui("text", selector=".modal .qs-action:nth-child(2) .qs-type option")
-    env.ui("selectOption", selector=".modal .qs-type", index=types.index("Flag message"), nth=1)
+    types = env.ui("text", selector=".modal .qs-action:nth-child(3) .qs-type option")
+    env.ui("selectOption", selector=".modal .qs-type", index=types.index("Flag message"), nth=2)
     keys = env.ui("text", selector=".modal #qs-key option")
     env.ui("selectOption", selector=".modal #qs-key", index=keys.index("Ctrl+Shift+3"))
     env.ui("button", label="Finish")
@@ -169,8 +176,9 @@ try:
     g.check("Important and flagged" in labels(), "Create New: the new step on the ribbon", labels())
     env.ui("selectMessage", subject="Team lunch")
     env.ui("key", selector="#message-list", key="#", code="Digit3", ctrl=True, shift=True)
-    f = wait(lambda: (lambda x: x if x and "$label1" in x and "\\Flagged" in x else None)(flags("Team lunch")))
-    g.check(f is not None, "Ctrl+Shift+3 runs it: categorized Important and flagged on the server", flags("Team lunch"))
+    f = wait(lambda: (lambda x: x if x and "$label1" in x and "\\Flagged" in x else None)(flags("Team lunch", "Projects")))
+    g.check(f is not None, "Ctrl+Shift+3 runs it: categorized Important, flagged and then moved to Projects on the server (the move listed first runs last)",
+            (flags("Team lunch"), flags("Team lunch", "Projects")))
 
     # ---- Manage Quick Steps: one deleted ----
     env.ui("click", selector="#rb-qs-manage")
